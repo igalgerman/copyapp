@@ -34,13 +34,12 @@ $hadRun  = $null -ne (Get-ItemProperty $runKey -Name CopyApp -ErrorAction Silent
 $hadLnk  = Test-Path $sendTo
 $hadRecv = Test-Path $recv
 $oldAppdata = $env:APPDATA
-$testEnv = @('COPYAPP_PORTABLE','COPYAPP_NO_BROWSER','COPYAPP_SKIP_PROMPTS','COPYAPP_NO_AUTOSTART_WRITE','COPYAPP_RECEIVE_DIR','COPYAPP_DATA_DIR','COPYAPP_WIFI_NAME','COPYAPP_INSTALL_DIR','COPYAPP_DESKTOP_DIR','COPYAPP_STARTMENU_DIR','COPYAPP_SENDTO_DIR')
+$testEnv = @('COPYAPP_NO_OSD','COPYAPP_PORTABLE','COPYAPP_NO_BROWSER','COPYAPP_SKIP_PROMPTS','COPYAPP_NO_AUTOSTART_WRITE','COPYAPP_RECEIVE_DIR','COPYAPP_DATA_DIR','COPYAPP_WIFI_NAME','COPYAPP_INSTALL_DIR','COPYAPP_DESKTOP_DIR','COPYAPP_STARTMENU_DIR','COPYAPP_SENDTO_DIR')
 $previousEnv = @{}; foreach ($key in $testEnv) { $previousEnv[$key] = [Environment]::GetEnvironmentVariable($key) }
 $proc = $null
 try {
     if (-not $NoBuild) {
-        $env:PATH = "C:\Program Files\Go\bin;$env:PATH"
-        Push-Location $root; go build -ldflags "-H=windowsgui -s -w" -o $exe ./cmd/copyapp; Pop-Location
+        pwsh -NoProfile -File (Join-Path $root 'build.ps1')
         if ($LASTEXITCODE) { throw 'build failed' }
     }
     Remove-Item $appdata, $files -Recurse -Force -ErrorAction SilentlyContinue
@@ -156,6 +155,11 @@ try {
     $r = Invoke-WebRequest "$B/send" -Method POST -Headers $hdr -Form @{ file = Get-Item "$files\note-e2e.txt" } @opt
     Check 'send file -> 200' ($r.StatusCode -eq 200) $r.Content
     Check 'file saved in Downloads\CopyApp' ((Test-Path "$recv\note-e2e.txt") -and (Get-Content "$recv\note-e2e.txt" -Raw) -eq 'hello file e2e')
+    $zone = Get-Content "$recv\note-e2e.txt" -Stream Zone.Identifier -ErrorAction SilentlyContinue
+    Check 'received file has the Mark of the Web (ZoneId=3)' ("$zone" -match 'ZoneId=3') "$zone"
+    '[InternetShortcut]' | Set-Content "$files\evil.lnk" -NoNewline
+    $r = Invoke-WebRequest "$B/send" -Method POST -Headers $hdr -Form @{ file = Get-Item "$files\evil.lnk" } @opt
+    Check 'received .lnk is renamed .lnk.blocked' ($r.StatusCode -eq 200 -and (Test-Path "$recv\evil.lnk.blocked") -and -not (Test-Path "$recv\evil.lnk")) $r.Content
 
     # phone -> PC image (goes to the clipboard as an image)
     Set-Clipboard 'SENTINEL-2'
@@ -190,6 +194,18 @@ try {
     Start-Sleep -Milliseconds 800
     $hotEvents = curl.exe -sk --max-time 3 -H "Cookie: $($hdr.Cookie)" "$B/events"
     Check 'global hotkey puts real clipboard text in phone inbox' ("$hotEvents" -match 'hotkey-real-exe-e2e')
+    $log = Get-Content "$dd\copyapp.log" -Raw
+    Check 'log: hotkey press, send request and publish recorded' ($log -match 'hotkey pressed: Ctrl\+Alt' -and $log -match 'clipboard send requested \(hotkey\)' -and $log -match 'published to phone: kind=text')
+    # The same send from the CopyApp window button (same path as the tray item).
+    Set-Clipboard 'window-button-e2e'
+    $r = Invoke-RestMethod "$L/local/send-clipboard" -Method POST -Headers $lh
+    Check 'window "send clipboard now" -> sent' ($r.result -eq 'sent') "$($r.result)"
+    $ev2 = curl.exe -sk --max-time 3 -H "Cookie: $($hdr.Cookie)" "$B/events"
+    Check 'window button puts clipboard text in phone inbox' ("$ev2" -match 'window-button-e2e')
+    powershell.exe -NoProfile -STA -Command 'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Clipboard]::Clear()'
+    $r = Invoke-RestMethod "$L/local/send-clipboard" -Method POST -Headers $lh
+    Check 'empty PC clipboard -> "empty"' ($r.result -eq 'empty') "$($r.result)"
+    Check 'control state reports version 1.0.0 and the pairing address' ($pcState.version -eq '1.0.0' -and $pcState.phone.pairedFrom) "$($pcState.version) $($pcState.phone.pairedFrom)"
 
     # loopback-only endpoints: 403 without the local key, 200 with it (header or cookie)
     foreach ($u in '/pairing', '/pairing/status') {
@@ -202,6 +218,11 @@ try {
     $r = Invoke-WebRequest "$L/pairing?k=$($lh.'X-CopyApp')" -SessionVariable ls @opt
     $lc = $ls.Cookies.GetAllCookies() | Where-Object Name -eq 'copyapp_local'
     Check 'pairing?k=KEY sets copyapp_local cookie, redirects to /pairing' ($r.StatusCode -eq 200 -and $lc -and $lc.HttpOnly -and $r.BaseResponse.RequestMessage.RequestUri.AbsolutePath -eq '/pairing')
+    Check 'local cookie is a session token, not the local key' ($lc.Value -and $lc.Value -ne $lh.'X-CopyApp')
+    Check 'raw local key as cookie -> 403' ((Invoke-WebRequest "$L/pairing/status" -Headers @{ Cookie = "copyapp_local=$($lh.'X-CopyApp')" } @opt).StatusCode -eq 403)
+    Check 'save folder on a network share -> 400' ((Invoke-WebRequest "$L/local/settings" -Headers $lh -Method POST -ContentType application/json -Body '{"saveDir":"\\\\server\\share"}' @opt).StatusCode -eq 400)
+    $startup = Join-Path $oldAppdata 'Microsoft\Windows\Start Menu\Programs\Startup'
+    Check 'save folder in Startup -> 400' ((Invoke-WebRequest "$L/local/settings" -Headers $lh -Method POST -ContentType application/json -Body (@{ saveDir = $startup } | ConvertTo-Json) @opt).StatusCode -eq 400)
     Check 'local cookie alone opens /pairing/status' ((Invoke-WebRequest "$L/pairing/status" -WebSession $ls @opt).StatusCode -eq 200)
     Check 'pairing/open without key -> 403' ((Invoke-WebRequest "$L/pairing/open" -Method POST @opt).StatusCode -eq 403)
     Check 'send-file without X-CopyApp -> 403' ((Invoke-WebRequest "$L/local/send-file?path=x" -Method POST @opt).StatusCode -eq 403)
@@ -210,15 +231,56 @@ try {
     Check 'pairing/open cross-origin -> 403' ((Invoke-WebRequest "$L/pairing/open" -Method POST -Headers @{ Origin = 'http://evil' } @opt).StatusCode -eq 403)
 
     # session survives a restart; unpair revokes
+    $null = Invoke-WebRequest "$L/local/settings" -Headers $lh -Method POST -ContentType application/json -Body '{"receiveMode":"folder","maxBytes":524288000,"language":"ru"}' @opt
     Stop-Process $proc -Force; Start-Sleep 1
     $proc = Start-Process $exe -WindowStyle Hidden -PassThru
     Start-Sleep 3
     $L = "http://127.0.0.1:$((Get-Content "$dd\local-port.txt").Trim())"
     Check 'session survives restart' ((Invoke-WebRequest "$B/status" -Headers $hdr @opt).StatusCode -eq 200)
     $state = Invoke-RestMethod "$L/local/state" -Headers @{ 'X-CopyApp' = (Get-Content "$dd\local.key").Trim() }
-    Check 'settings persist across restart' ($state.settings.maxBytes -eq 2147483648 -and $state.settings.saveDir -eq $recv)
+    Check 'settings persist across restart' ($state.settings.maxBytes -eq 524288000 -and $state.settings.receiveMode -eq 'folder' -and $state.settings.language -eq 'ru' -and $state.settings.saveDir -eq $recv) ($state.settings | ConvertTo-Json -Compress)
+    $log = Get-Content "$dd\copyapp.log" -Raw
+    $secrets = @('hotkey-real-exe-e2e', 'window-button-e2e', $text, 'explicit clipboard e2e', $lh.'X-CopyApp', $cookie.Value, ($pairUrl -replace '^.*t=', ''))
+    Check 'log never contains clipboard text, the local key, session or pairing token' (-not ($secrets | Where-Object { $_ -and $log.Contains($_) }))
+    Check 'log names the version' ($log -match 'CopyApp 1\.0\.0 starting')
     Check 'unpair -> 204' ((Invoke-WebRequest "$B/unpair" -Method POST -Headers $hdr @opt).StatusCode -eq 204)
     Check 'after unpair /status -> 401' ((Invoke-WebRequest "$B/status" -Headers $hdr @opt).StatusCode -eq 401)
+
+    # First run like a user: double-click the download -> it installs itself
+    # (temp install/shortcut folders), answers the startup question (yes) and
+    # runs the installed copy; the Desktop shortcut target opens the running
+    # copy; uninstall removes only what install created.
+    Stop-Process $proc -Force; Start-Sleep 1
+    Remove-Item Env:COPYAPP_PORTABLE
+    $env:COPYAPP_SKIP_PROMPTS = 'yes'
+    $env:COPYAPP_DATA_DIR = "$tmp\appdata2\CopyApp"; $dd2 = $env:COPYAPP_DATA_DIR
+    $download = "$tmp\download\copyapp.exe"; New-Item -ItemType Directory -Force (Split-Path $download) | Out-Null; Copy-Item $exe $download
+    # Not -Wait: that would also wait for the installed copy it starts.
+    $p1 = Start-Process $download -PassThru; $null = $p1.WaitForExit(60000)
+    Check 'downloaded exe hands over to the installed copy and exits 0 within 5 s' ($p1.HasExited -and $p1.ExitCode -eq 0 -and ($p1.ExitTime - $p1.StartTime).TotalSeconds -lt 5) "$(($p1.ExitTime - $p1.StartTime).TotalSeconds) s"
+    $inst = "$tmp\installed\copyapp.exe"
+    Check 'installed copy in the install folder' ((Test-Path $inst) -and (Get-FileHash $inst).Hash -eq (Get-FileHash $download).Hash)
+    for ($i = 0; $i -lt 50 -and -not (Test-Path "$tmp\sendto\Phone (CopyApp).lnk"); $i++) { Start-Sleep -Milliseconds 200 }
+    Check 'Desktop, Start menu and Send to shortcuts created' ((Test-Path "$tmp\desktop\CopyApp.lnk") -and (Test-Path "$tmp\startmenu\CopyApp.lnk") -and (Test-Path "$tmp\sendto\Phone (CopyApp).lnk"))
+    $sh = (New-Object -ComObject WScript.Shell).CreateShortcut("$tmp\desktop\CopyApp.lnk")
+    Check 'Desktop shortcut opens the installed exe with --open' ($sh.TargetPath -eq $inst -and $sh.Arguments -eq '--open') "$($sh.TargetPath) $($sh.Arguments)"
+    for ($i = 0; $i -lt 50 -and -not (Test-Path "$dd2\local-port.txt"); $i++) { Start-Sleep -Milliseconds 200 }
+    Start-Sleep 1
+    $running = Get-Process copyapp -ErrorAction SilentlyContinue
+    Check 'exactly one copy runs, the installed one' (@($running).Count -eq 1 -and $running.Path -eq $inst) "$($running.Path)"
+    $lh2 = @{ 'X-CopyApp' = (Get-Content "$dd2\local.key").Trim() }; $L2 = "http://127.0.0.1:$((Get-Content "$dd2\local-port.txt").Trim())"
+    $st2 = Invoke-RestMethod "$L2/local/state" -Headers $lh2
+    Check 'first run: startup answered, pairing window open' ((Get-Content "$dd2\settings.json" -Raw | ConvertFrom-Json).autostartAsked -and $st2.autostart -and $st2.pairing.open)
+    $p2 = Start-Process $inst -ArgumentList '--open' -PassThru; $null = $p2.WaitForExit(30000)
+    Check 'Desktop shortcut while running: forwards to the running copy and exits' ($p2.ExitCode -eq 0 -and @(Get-Process copyapp).Count -eq 1)
+    New-Item -ItemType Directory -Force "$tmp\received" | Out-Null; 'keep me' | Set-Content "$tmp\received\mine.txt"
+    $r = Invoke-WebRequest "$L2/local/uninstall" -Method POST -Headers $lh2 @opt
+    Check 'uninstall accepted' ($r.StatusCode -eq 202)
+    for ($i = 0; $i -lt 60 -and ((Test-Path $inst) -or (Get-Process copyapp -ErrorAction SilentlyContinue)); $i++) { Start-Sleep -Milliseconds 500 }
+    Check 'uninstall: app quit, exe and install folder removed' (-not (Get-Process copyapp -ErrorAction SilentlyContinue) -and -not (Test-Path "$tmp\installed"))
+    Check 'uninstall: shortcuts removed' (-not (Test-Path "$tmp\desktop\CopyApp.lnk") -and -not (Test-Path "$tmp\startmenu\CopyApp.lnk") -and -not (Test-Path "$tmp\sendto\Phone (CopyApp).lnk"))
+    Check 'uninstall: CopyApp data removed (answered yes)' (-not (Test-Path "$dd2\local.key") -and -not (Test-Path "$dd2\settings.json"))
+    Check 'uninstall: received and unrelated files kept' ((Test-Path "$tmp\received\mine.txt") -and (Test-Path "$tmp\download\copyapp.exe"))
 }
 finally {
     $env:APPDATA = $oldAppdata
