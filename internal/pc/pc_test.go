@@ -126,3 +126,17 @@ func TestSetImageRejectsHugePNG(t *testing.T) {
 		t.Fatalf("want ErrTooManyPixels, got %v", err)
 	}
 }
+
+// Smoke test against the real netsh: must not fail or hang; prints the result.
+func TestWiFiNameRuns(t *testing.T) {
+	t.Logf("WiFiName() = %q", WiFiName())
+}
+
+func TestDecodeOEM(t *testing.T) {
+	if got := decodeOEM([]byte("SSID : Дом")); got != "SSID : Дом" {
+		t.Fatalf("utf-8 passthrough: %q", got)
+	}
+	if got := decodeOEM([]byte("SSID : Home")); got != "SSID : Home" {
+		t.Fatalf("ascii: %q", got)
+	}
+}

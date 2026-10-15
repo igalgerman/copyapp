@@ -14,6 +14,7 @@
   const connLabel = $('#conn-label');
   const banner = $('#banner');
   const bannerSub = $('#banner-sub');
+  const bannerHelp = $('#banner-help');
   const sendBtn = $('#send-clip');
   const toasts = $('#toasts');
   const alerts = $('#alerts');
@@ -640,6 +641,8 @@
   let attempt = 0;
   let paired = false;
   let bannerTimer = 0;
+  let offlineSince = 0; // when the current outage began (0: online)
+  const HELP_AFTER = 10000; // show the same-Wi-Fi hint after 10 s offline
 
 
   function onUnauthorized(silent) {
@@ -730,6 +733,7 @@
 
   function scheduleReconnect() {
     setConn('offline');
+    if (!offlineSince) offlineSince = Date.now();
     attempt++;
     const delay = Math.min(30000, 1000 * 2 ** Math.min(attempt - 1, 5)) * (0.85 + Math.random() * 0.3);
     const due = Date.now() + delay;
@@ -741,6 +745,7 @@
     const render = () => {
       const s = Math.max(0, Math.ceil((due - Date.now()) / 1000));
       setMsg(bannerSub, s <= 0 ? ['banner.now'] : [attempt >= 4 ? 'banner.hint' : 'banner.in', { n: s }]);
+      bannerHelp.hidden = !(offlineSince && Date.now() - offlineSince > HELP_AFTER);
     };
     render();
     clearInterval(countdownTimer);
@@ -751,6 +756,8 @@
     }
   }
   function hideBanner() {
+    offlineSince = 0;
+    bannerHelp.hidden = true;
     clearInterval(countdownTimer);
     clearTimeout(bannerTimer); bannerTimer = 0;
     if (!banner.hidden) toast('ok', ['online.t'], ['online.d'], 2500);

@@ -97,6 +97,10 @@ assert.ok(/id="app-row"[^>]*data-open="sheet-cert"/.test(html), 'Settings "Make 
 assert.ok(/id="verify-row"[\s\S]{0,400}data-fp-short/.test(html), 'Verify connection shows the short certificate code');
 for (const k of ['setup.title', 'pair.certB', 'settings.cert']) assert.ok(!(k in STR.en), `stale key ${k}`);
 assert.match(STR.en['pair.s3'], /Proceed/, 'pairing steps explain Advanced > Proceed');
+assert.ok(html.includes('id="banner-help"') && /banner-help[^>]*hidden/.test(html), 'reconnect banner has a hidden Wi-Fi help line');
+for (const l of LANGS) assert.match(STR[l]['banner.help'], /Wi‑Fi/, `${l}.banner.help mentions Wi-Fi`);
+for (const l of LANGS) assert.ok(!/mobile|סלולר|мобильн/i.test(STR[l]['banner.help']), `${l}.banner.help must not ask to turn mobile data off`);
+assert.ok(/HELP_AFTER = 10000/.test(app) && /bannerHelp\.hidden = !\(offlineSince/.test(app), 'help line appears after 10 s offline');
 assert.ok(/writeText[\s\S]*legacyCopy/.test(app) && /isSecureContext/.test(app), 'clipboard fallbacks');
 
 console.log(`i18n.js ok (${keys.length} keys, ${used.size} used)`);

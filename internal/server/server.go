@@ -82,6 +82,10 @@ type Config struct {
 	// request must carry it as the LocalCookieName cookie (set by opening
 	// /pairing?k=SECRET) or the X-CopyApp header. Empty denies those routes.
 	LocalSecret string
+	// WiFiName returns the SSID this PC is connected to ("" if unknown or
+	// wired); the pairing page names it so the phone joins the same network.
+	// Optional.
+	WiFiName func() string
 }
 
 // LocalCookieName holds the local secret for the PC's own pairing page.
@@ -140,7 +144,7 @@ func New(cfg Config) *Server {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.handler.ServeHTTP(w, r) }
 
-// StartPairing opens a 2-minute pairing window and returns the URL to put in
+// StartPairing opens a 10-minute pairing window and returns the URL to put in
 // the QR code. Use this (not Auth.OpenPairing) so /qr shows the right token.
 func (s *Server) StartPairing() string {
 	tok := s.cfg.Auth.OpenPairing()
@@ -416,7 +420,7 @@ func (s *Server) cookie(value string, maxAge int) *http.Cookie {
 
 const pairFailHTML = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CopyApp</title><body style="font:16px system-ui;margin:2rem;max-width:30rem">
-<h1>Pairing link expired</h1><p>This code was already used or is older than 2 minutes.</p>
+<h1>Pairing link expired</h1><p>This code was already used or is older than 10 minutes.</p>
 <p>On your PC, open the CopyApp tray menu and choose <b>Pair phone</b> to get a new code.</p></body>`
 
 func (s *Server) pair(w http.ResponseWriter, r *http.Request) {

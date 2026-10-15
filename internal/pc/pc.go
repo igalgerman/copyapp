@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"golang.design/x/clipboard"
 	"golang.org/x/sys/windows"
@@ -242,4 +243,39 @@ func AutostartEnabled() bool {
 	defer k.Close()
 	_, _, err = k.GetStringValue(AppName)
 	return err == nil
+}
+
+var procGetOEMCP = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetOEMCP")
+
+// WiFiName returns the SSID of the Wi-Fi network this PC is connected to, or
+// "" when it is unknown, disconnected or the PC is wired only. It runs
+// `netsh wlan show interfaces` (about 50 ms, no window).
+func WiFiName() string {
+	c, cancel := ctx()
+	defer cancel()
+	cmd := exec.CommandContext(c, "netsh.exe", "wlan", "show", "interfaces")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return ParseSSID(decodeOEM(out))
+}
+
+// decodeOEM turns netsh output into a Go string. Without a console netsh
+// writes in the OEM code page; UTF-8 output is passed through.
+func decodeOEM(b []byte) string {
+	if utf8.Valid(b) || len(b) == 0 {
+		return string(b)
+	}
+	cp, _, _ := procGetOEMCP.Call()
+	n, err := windows.MultiByteToWideChar(uint32(cp), 0, &b[0], int32(len(b)), nil, 0)
+	if err != nil || n <= 0 {
+		return string(b)
+	}
+	w := make([]uint16, n)
+	if _, err := windows.MultiByteToWideChar(uint32(cp), 0, &b[0], int32(len(b)), &w[0], n); err != nil {
+		return string(b)
+	}
+	return string(utf16.Decode(w))
 }

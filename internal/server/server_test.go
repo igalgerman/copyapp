@@ -714,6 +714,66 @@ func TestPairingPageShowsShortFingerprint(t *testing.T) {
 	}
 }
 
+// Real-user feedback: Wi-Fi / mobile data / guest network / privacy warning
+// must be stated before the QR, and troubleshooting must be one tap away.
+func TestPairingPageBeforeYouScan(t *testing.T) {
+	e := newEnv(t, 0)
+	e.s.StartPairing()
+	body := e.do(local(e, "GET", "/pairing")).Body.String()
+	before, qr := strings.Index(body, `<section class="before"`), strings.Index(body, `<section class="qrbox"`)
+	if before < 0 || qr < before {
+		t.Fatal("the 'Before you scan' box must come before the QR")
+	}
+	box := body[before:qr]
+	if strings.Contains(box, "<details") {
+		t.Fatal("the 'Before you scan' box must not be collapsed")
+	}
+	for _, k := range []string{"pair.beforeTitle", "pair.b1", "pair.b2", "pair.b3"} {
+		if !strings.Contains(box, i18n.T(k)) {
+			t.Errorf("before box lacks %s", k)
+		}
+	}
+	if n := strings.Count(box, `<li class="b">`); n != 3 {
+		t.Fatalf("before box has %d points, want 3", n)
+	}
+	// Mobile data off is not needed normally: only a last tip in the collapsed troubleshooting.
+	if strings.Contains(box, i18n.T("pair.t4")) || strings.Contains(box, "סלולרי") {
+		t.Fatal("mobile data must not be in the always-visible box")
+	}
+	if !strings.Contains(body, `<details id="trouble" class="trouble">`) || strings.Contains(body, "<details open") ||
+		!strings.Contains(body, i18n.T("pair.t1")) || !strings.Contains(body, i18n.T("pair.t3")) || !strings.Contains(body, i18n.T("pair.t4")) {
+		t.Fatal("collapsed 'Can't open the page?' details missing")
+	}
+	// 10-minute window shown as m:ss.
+	if !strings.Contains(body, `<b id="left" dir="ltr">10:00</b>`) && !strings.Contains(body, `<b id="left" dir="ltr">9:59</b>`) {
+		t.Fatal("countdown must start at 10:00")
+	}
+}
+
+func TestPairingPageNamesTheWiFi(t *testing.T) {
+	e := newEnv(t, 0)
+	e.s.cfg.WiFiName = func() string { return `Home <script>&` }
+	e.s.StartPairing()
+	body := e.do(local(e, "GET", "/pairing")).Body.String()
+	if !strings.Contains(body, `<b class="ssid"><bdi>Home &lt;script&gt;&amp;</bdi></b>`) || !strings.Contains(body, `data-k="pair.b1Named"`) {
+		t.Fatal("pairing page must name the PC's Wi-Fi, escaped")
+	}
+	if strings.Contains(body, `Home <script>`) {
+		t.Fatal("SSID not escaped")
+	}
+	if !strings.Contains(body, `data-wifi="Home &lt;script&gt;&amp;"`) {
+		t.Fatal("script needs the escaped SSID to re-render on language switch")
+	}
+}
+
+func TestMinSec(t *testing.T) {
+	for in, want := range map[int]string{600: "10:00", 599: "9:59", 61: "1:01", 5: "0:05", 0: "0:00", -3: "0:00"} {
+		if got := minSec(in); got != want {
+			t.Errorf("minSec(%d) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // ---- localhost-only /qr and /pairing ----
 
 // local is a request from this PC's own pairing page (holding the local cookie).

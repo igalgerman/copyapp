@@ -1,6 +1,8 @@
 package server
 
 import (
+	"fmt"
+	"html"
 	"html/template"
 	"net/http"
 	"strconv"
@@ -68,6 +70,14 @@ func (s *Server) pairingOpen(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// minSec formats seconds as m:ss for the pairing countdown.
+func minSec(secs int) string {
+	if secs < 0 {
+		secs = 0
+	}
+	return strconv.Itoa(secs/60) + ":" + fmt.Sprintf("%02d", secs%60)
+}
+
 func (s *Server) pairingPage(w http.ResponseWriter, r *http.Request) {
 	nonce := randomNonce()
 	h := w.Header()
@@ -84,9 +94,21 @@ func (s *Server) pairingPage(w http.ResponseWriter, r *http.Request) {
 	for k, v := range dict[lang] {
 		str[k] = template.HTML(v) // our own strings; they may hold <b>/<code>
 	}
-	str["pair.expires"] = template.HTML(strings.Replace(dict[lang]["pair.expires"], "{s}",
-		`<b id="left">`+strconv.Itoa(st.SecondsLeft)+`</b>`, 1))
+	str["pair.expires"] = template.HTML(strings.Replace(dict[lang]["pair.expires"], "{t}",
+		`<b id="left" dir="ltr">`+minSec(st.SecondsLeft)+`</b>`, 1))
+	wifi := ""
+	if s.cfg.WiFiName != nil {
+		wifi = s.cfg.WiFiName()
+	}
+	b1Key := "pair.b1"
+	if wifi != "" {
+		b1Key = "pair.b1Named"
+		str[b1Key] = template.HTML(strings.Replace(dict[lang][b1Key], "{wifi}",
+			`<b class="ssid"><bdi>`+html.EscapeString(wifi)+`</bdi></b>`, 1))
+	}
 	pairingTmpl.Execute(w, map[string]any{
+		"WiFi":        wifi,
+		"B1Key":       b1Key,
 		"Nonce":       nonce,
 		"State":       st,
 		"Fingerprint": fingerprint(s.cfg.CAPEM),
@@ -106,14 +128,14 @@ var pairingTmpl = template.Must(template.New("pairing").Parse(`<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{index .S "pair.htmlTitle"}}</title>
 <style nonce="{{.Nonce}}">
-:root{--bg:#f4f5f7;--card:#fff;--fg:#1b1d22;--muted:#5d6370;--line:#e3e5ea;--accent:#2f6bff;--ok:#16a34a;--warn:#b45309}
-@media (prefers-color-scheme:dark){:root{--bg:#121318;--card:#1c1e25;--fg:#eceef3;--muted:#a0a6b4;--line:#2c2f39;--accent:#7aa2ff;--ok:#4ade80;--warn:#fbbf24}}
+:root{--bg:#f4f5f7;--card:#fff;--fg:#1b1d22;--muted:#5d6370;--line:#e3e5ea;--accent:#2f6bff;--ok:#16a34a;--warn:#b45309;--butter:#FFD447;--butter-bg:#FFF6D6;--butter-line:#E3AE00;--on-butter:#1E1A05}
+@media (prefers-color-scheme:dark){:root{--bg:#121318;--card:#1c1e25;--fg:#eceef3;--muted:#a0a6b4;--line:#2c2f39;--accent:#7aa2ff;--ok:#4ade80;--warn:#fbbf24;--butter-bg:#2B250D;--butter-line:#FFD447;--on-butter:#FFF3C4}}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--fg);
  font:16px/1.5 "Segoe UI",system-ui,sans-serif;padding:24px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:760px;width:100%;padding:20px 32px 32px;
  display:grid;grid-template-columns:auto 1fr;gap:20px 32px;box-shadow:0 8px 30px rgba(0,0,0,.06)}
-@media (max-width:640px){.card{grid-template-columns:1fr}}
+@media (max-width:640px){.card{grid-template-columns:1fr;padding:16px 18px 22px}body{padding:12px}.before{padding:12px 14px 14px}}
 .card>section{min-width:0}
 .top{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px}
 .brand{font-weight:700;font-size:18px}
@@ -149,11 +171,24 @@ details p{margin:0 0 8px;font-size:14px}
 .ok{color:var(--ok)} .warn{color:var(--warn)}
 button{font:inherit;background:var(--accent);color:#fff;border:0;border-radius:10px;padding:10px 18px;cursor:pointer}
 button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.before{grid-column:1/-1;background:var(--butter-bg);color:var(--on-butter);border:2px solid var(--butter-line);border-radius:14px;padding:14px 18px 16px}
+.before h2{margin:0 0 12px;font-size:19px;font-weight:700;display:flex;align-items:center;gap:10px}
+.badge{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--butter);color:#1E1A05;flex:none}
+.badge svg{width:18px;height:18px}
+.before ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,1fr);gap:12px 28px}
+@media (max-width:640px){.before ul{grid-template-columns:1fr}}
+.before li{display:grid;grid-template-columns:24px 1fr;gap:10px;align-items:start;font-size:15px;line-height:1.45}
+.before li>svg{width:22px;height:22px;margin-top:1px}
+.ssid{font-weight:800;white-space:nowrap}
+.ic{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+details.trouble{border:2px solid var(--butter-line)}
+details.trouble summary{color:var(--fg);font-size:15px}
+details.trouble p{line-height:1.45}
 body.paired .qr,body.expired .qr,body.paired .timer,body.expired .timer{display:none}
 body.paired #paired,body.expired #expired{display:flex}
 </style>
 </head>
-<body class="{{if .State.Paired}}paired{{else if not .State.Open}}expired{{end}}">
+<body data-wifi="{{.WiFi}}" class="{{if .State.Paired}}paired{{else if not .State.Open}}expired{{end}}">
 <main class="card">
  <header class="top">
   <span class="brand">CopyApp</span>
@@ -163,6 +198,14 @@ body.paired #paired,body.expired #expired{display:flex}
    <button type="button" data-lang="en" lang="en" aria-pressed="false">EN</button>
   </div>
  </header>
+ <section class="before" aria-labelledby="before-h">
+  <h2 id="before-h"><span class="badge"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v8M12 18h.01" stroke-width="3"/></svg></span><span data-k="pair.beforeTitle">{{index .S "pair.beforeTitle"}}</span></h2>
+  <ul>
+   <li class="b"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 19.5h.01"/></svg><span data-k="{{.B1Key}}">{{index .S .B1Key}}</span></li>
+   <li class="b"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 16.5h.01M11 16.5h.01M17 13V5"/></svg><span data-k="pair.b2">{{index .S "pair.b2"}}</span></li>
+   <li class="b"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span data-k="pair.b3">{{index .S "pair.b3"}}</span></li>
+  </ul>
+ </section>
  <section class="qrbox" aria-live="polite">
   <div class="qr"><img src="/qr?{{.Stamp}}" alt="{{index .S "pair.qrAlt"}}" data-k-alt="pair.qrAlt" width="256" height="256"></div>
   <div class="timer" id="timer">{{index .S "pair.expires"}}</div>
@@ -179,6 +222,13 @@ body.paired #paired,body.expired #expired{display:flex}
    <li><b class="n">2</b><span data-k="pair.s2">{{index .S "pair.s2"}}</span></li>
   </ol>
   <p class="ready" data-k="pair.ready">{{index .S "pair.ready"}}</p>
+  <details id="trouble" class="trouble">
+   <summary data-k="pair.tSum">{{index .S "pair.tSum"}}</summary>
+   <p data-k="pair.t1">{{index .S "pair.t1"}}</p>
+   <p data-k="pair.t2">{{index .S "pair.t2"}}</p>
+   <p data-k="pair.t3">{{index .S "pair.t3"}}</p>
+   <p data-k="pair.t4">{{index .S "pair.t4"}}</p>
+  </details>
   <details id="careful">
    <summary data-k="pair.carefulSum">{{index .S "pair.carefulSum"}}</summary>
    <div class="fplabel" data-k="pair.fpLabel">{{index .S "pair.fpLabel"}}</div>
@@ -198,16 +248,22 @@ body.paired #paired,body.expired #expired{display:flex}
  var b=document.body, root=document.documentElement, secs={{.State.SecondsLeft}};
  var dict=JSON.parse(document.getElementById('strings').textContent), lang=root.lang;
  function get(k){return (dict[lang]||{})[k]||dict.en[k]||k}
+ function ms(v){return Math.floor(v/60)+':'+String(v%60).padStart(2,'0')}
  function timer(){
-  var t=document.getElementById('timer'), parts=get('pair.expires').split('{s}'), n=document.createElement('b');
-  n.id='left'; n.textContent=secs;
+  var t=document.getElementById('timer'), parts=get('pair.expires').split('{t}'), n=document.createElement('b');
+  n.id='left'; n.dir='ltr'; n.textContent=ms(secs);
   t.replaceChildren(parts[0], n, parts[1]||'');
  }
  function apply(l){
   if(!dict[l]) return;
   lang=l; root.lang=l; root.dir=l==='he'?'rtl':'ltr';
   document.title=get('pair.htmlTitle');
-  document.querySelectorAll('[data-k]').forEach(function(e){e.innerHTML=get(e.dataset.k)});
+  document.querySelectorAll('[data-k]').forEach(function(e){
+   var h=get(e.dataset.k);
+   if(h.indexOf('{wifi}')<0){e.innerHTML=h;return}
+   e.innerHTML=h.replace('{wifi}','<b class="ssid"><bdi></bdi></b>');
+   e.querySelector('.ssid bdi').textContent=b.dataset.wifi||'';
+  });
   document.querySelectorAll('[data-k-alt]').forEach(function(e){e.alt=get(e.dataset.kAlt)});
   document.getElementById('langs').setAttribute('aria-label',get('pair.lang'));
   document.querySelectorAll('[data-lang]').forEach(function(e){e.setAttribute('aria-pressed',String(e.dataset.lang===l))});
@@ -222,7 +278,7 @@ body.paired #paired,body.expired #expired{display:flex}
  function set(st){
   b.className = st.paired ? 'paired' : (st.open ? '' : 'expired');
   secs = Math.max(0, st.secondsLeft|0);
-  var left=document.getElementById('left'); if(left) left.textContent=secs;
+  var left=document.getElementById('left'); if(left) left.textContent=ms(secs);
  }
  function poll(){
   fetch('/pairing/status',{cache:'no-store'}).then(function(r){return r.json()}).then(function(st){

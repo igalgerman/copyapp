@@ -129,6 +129,7 @@ func main() {
 		},
 		Logf:        log.Printf,
 		LocalSecret: localKey,
+		WiFiName:    pc.WiFiName,
 	})
 
 	go func() {

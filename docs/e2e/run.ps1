@@ -80,6 +80,8 @@ try {
     Check 'pairing page is not reachable from the LAN address' ((Invoke-WebRequest "$B/pairing" @opt).StatusCode -eq 403)
     Check '/ca.crt available while pairing is open' ((Invoke-WebRequest "$B/ca.crt" @opt).StatusCode -eq 200)
 
+    $ps = Invoke-RestMethod "$L/pairing/status" -Headers @{ 'X-CopyApp' = (Get-Content "$dd\local.key").Trim() }
+    Check 'pairing window is 10 minutes' ($ps.open -and $ps.secondsLeft -gt 540 -and $ps.secondsLeft -le 600) "$($ps.secondsLeft)"
     # pair: decode the QR like a phone camera
     $lh = @{ 'X-CopyApp' = (Get-Content "$dd\local.key").Trim() }
     Check '/qr without the local key -> 403' ((Invoke-WebRequest "$L/qr" @opt).StatusCode -eq 403)
@@ -104,6 +106,12 @@ try {
     Check 'PWA Settings has Verify connection + optional Make-it-an-app rows' ($r.Content -match 'id="verify-row"' -and $r.Content -match 'id="app-row"[^>]*data-open="sheet-cert"' -and $r.Content -match 'id="tip-card"')
     $pg = (Invoke-WebRequest "$L/pairing" -Headers $lh @opt).Content
     Check 'pairing page: exactly 2 steps' (([regex]::Matches($pg, '<li>')).Count -eq 2)
+    $bi = $pg.IndexOf('<section class="before"'); $qi = $pg.IndexOf('<section class="qrbox"')
+    Check 'pairing page: open "Before you scan" box above the QR with 3 points' ($bi -ge 0 -and $bi -lt $qi -and ([regex]::Matches($pg, '<li class="b">')).Count -eq 3 -and $pg.Substring($bi, $qi - $bi) -notmatch '<details')
+    Check 'pairing page: collapsed "Can''t open the page?" troubleshooting' ($pg -match '<details id="trouble" class="trouble">')
+    $ssid = ''; foreach ($ln in (netsh wlan show interfaces)) { if ($ln -match '^\s*SSID\s*:\s*(.+?)\s*$') { $ssid = $Matches[1]; break } }
+    if ($ssid) { Check "pairing page names this PC's Wi-Fi ($ssid)" ($pg -match 'data-k="pair.b1Named"' -and $pg.Contains('<bdi>' + [System.Net.WebUtility]::HtmlEncode($ssid) + '</bdi>')) }
+    else { Check 'pairing page: generic same-Wi-Fi point (no Wi-Fi name known)' ($pg -match 'data-k="pair.b1"') }
     Check 'pairing page: short code in collapsed details, optional app section collapsed' ($pg -match '<details id="careful">' -and $pg -match '<details id="optional">' -and $pg -notmatch '<details open' -and $pg -match [regex]::Escape("$($st.shortFingerprint)"))
 
     # phone -> PC text (real Windows clipboard)
