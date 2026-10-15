@@ -1,1 +1,4 @@
 dist/
+docs/video/*.mp4
+docs/video/raw/
+docs/video/make/tmp/
