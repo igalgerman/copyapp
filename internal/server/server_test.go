@@ -694,8 +694,20 @@ func TestPairingPageShowsShortFingerprint(t *testing.T) {
 	e := newEnv(t, 0)
 	e.s.StartPairing()
 	body := e.do(local(e, "GET", "/pairing")).Body.String()
-	if !strings.Contains(body, tlsutil.ShortFingerprint(e.s.cfg.CAPEM)) || !strings.Contains(body, "match before installing") {
-		t.Fatal("pairing page must show the short fingerprint and the check instruction")
+	if !strings.Contains(body, tlsutil.ShortFingerprint(e.s.cfg.CAPEM)) || !strings.Contains(body, `<details id="careful">`) {
+		t.Fatal("pairing page must show the short fingerprint in the 'for the careful' details")
+	}
+	// The required flow is just two steps; the certificate/app upgrade is a collapsed, optional section.
+	if n := strings.Count(body, "<li>"); n != 2 {
+		t.Fatalf("pairing page has %d steps, want 2", n)
+	}
+	if !strings.Contains(body, i18n.T("pair.s2")) || !strings.Contains(body, `<details id="optional">`) || strings.Contains(body, "<details open") {
+		t.Fatal("pairing page must explain Advanced > Proceed and keep the optional app section collapsed")
+	}
+	for _, gone := range []string{"pair.s3", "pair.s4", "copyapp-ca.crt"} {
+		if strings.Contains(body, gone) {
+			t.Fatalf("pairing page still mentions %q", gone)
+		}
 	}
 	if !strings.Contains(body, `<html lang="he" dir="rtl">`) || !strings.Contains(body, `data-lang="ru"`) || !strings.Contains(body, i18n.T("pair.h1")) {
 		t.Fatal("pairing page must default to Hebrew RTL with a language switcher")

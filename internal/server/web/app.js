@@ -234,7 +234,7 @@
       const copy = el('button', { type: 'button', class: 'btn btn-primary' }, icon('copy'), el('span', { msg: ['copyImage'] }));
       copy.addEventListener('click', () => copyImage(item, copy));
       const dl = el('a', { class: 'btn btn-quiet', href: url, download: item.name || 'image.png' }, icon('download'), el('span', { msg: ['save'] }));
-      dl.addEventListener('click', () => toast('ok', ['toast.saving'], ['toast.inDownloads']));
+      dl.addEventListener('click', () => { toast('ok', ['toast.saving'], ['toast.inDownloads']); noteSuccess(); });
       card.append(el('div', { class: 'card-actions' }, copy, dl));
     } else {
       const name = item.name || T('dock.file');
@@ -242,7 +242,7 @@
         el('span', { class: 'file-tile', 'aria-hidden': 'true', text: extOf(name, item.mime) }),
         el('div', {}, el('div', { class: 'file-name' }, el('bdi', { text: name })), el('div', { class: 'file-sub', text: fmtSize(item.size), 'data-size': item.size }))));
       const dl = el('a', { class: 'btn btn-primary', href: url, download: name }, icon('download'), el('span', { msg: ['download'] }));
-      dl.addEventListener('click', () => toast('ok', ['toast.downloading', { name }], ['toast.inDownloads']));
+      dl.addEventListener('click', () => { toast('ok', ['toast.downloading', { name }], ['toast.inDownloads']); noteSuccess(); });
       card.append(el('div', { class: 'card-actions' }, dl));
     }
 
@@ -262,6 +262,7 @@
 
   // ---------- copy (PC -> phone) ----------
   function flashDone(btn) {
+    noteSuccess();
     const label = $('span', btn);
     const old = label.dataset.i18n;
     const use = $('use', btn);
@@ -277,15 +278,25 @@
       use.setAttribute('href', oldIcon);
     }, 2200);
   }
+  // Fallback for pages where navigator.clipboard is missing or refuses
+  // (e.g. the certificate warning was bypassed and the browser is strict).
   function legacyCopy(text) {
-    const ta = el('textarea', { readonly: true, style: 'position:fixed;top:0;left:0;opacity:0' });
+    const ta = el('textarea', { readonly: true, 'aria-hidden': 'true', style: 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0' });
     ta.value = text;
     body.append(ta);
     ta.select();
+    try { ta.setSelectionRange(0, text.length); } catch { /* old browser */ }
     let ok = false;
     try { ok = document.execCommand('copy'); } catch { ok = false; }
     ta.remove();
     return ok;
+  }
+  async function writeText(text) {
+    const cb = navigator.clipboard;
+    if (cb && cb.writeText) {
+      try { await cb.writeText(text); return; } catch { /* blocked: try the old way */ }
+    }
+    if (!legacyCopy(text)) throw new Error('copy');
   }
   async function fetchItem(item) {
     const r = await fetch('/item/' + encodeURIComponent(item.id), { cache: 'no-store' });
@@ -296,12 +307,17 @@
   async function copyText(item, btn) {
     try {
       if (typeof item.text === 'string') {
-        if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(item.text);
-        else if (!legacyCopy(item.text)) throw new Error('copy');
+        await writeText(item.text);
       } else if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
         // Pass a promise so the copy keeps the tap's user activation.
-        const blob = fetchItem(item).then((r) => r.text()).then((s) => new Blob([s], { type: 'text/plain' }));
-        await navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]);
+        let text = null;
+        const blob = fetchItem(item).then((r) => r.text()).then((s) => { text = s; return new Blob([s], { type: 'text/plain' }); });
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]);
+        } catch (e) {
+          if (text === null) await blob; // rethrows 'gone' / 'unauthorized'
+          if (!legacyCopy(text)) throw e;
+        }
       } else {
         const s = await (await fetchItem(item)).text();
         if (!legacyCopy(s)) throw new Error('copy');
@@ -435,6 +451,7 @@
           let detail = b;
           if (res.kind === 'file' && res.saved && res.saved.length > 1) detail = ['done.files', { n: res.saved.length }];
           showResult(entry, true, a, detail);
+          noteSuccess();
           toast('ok', [res.kind === 'file' ? 'toast.sentPc' : 'toast.copiedPc'], detail);
           resolve(true);
           return;
@@ -512,10 +529,12 @@
       sendBtn.classList.remove('is-busy');
     }
   }
-  // Returns a PNG Blob, a string, or null when the browser won't let us read.
+  // Returns a PNG Blob, a string, or null when the browser won't let us read
+  // (no secure context, no API, or permission denied): the caller then opens
+  // the paste box instead.
   async function readClipboard() {
-    const cb = navigator.clipboard;
-    if (!cb) return null;
+    const cb = window.isSecureContext ? navigator.clipboard : null;
+    if (!cb || !(cb.read || cb.readText)) return null;
     if (cb.read) {
       try {
         const items = await cb.read();
@@ -579,8 +598,6 @@
       body.append(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 10000);
       toast('ok', ['cert.ok'], ['cert.okSub']);
-      store.set('setupDismissed', '1');
-      setupCard.hidden = true;
     } catch {
       toast('err', ['cert.fail'], ['cert.failSub']);
     }
@@ -593,11 +610,27 @@
     goUnpaired('unpair.done');
   });
 
-  const setupCard = $('#setup-card');
-  $('#setup-dismiss').addEventListener('click', () => { store.set('setupDismissed', '1'); setupCard.hidden = true; });
-  function maybeShowSetup() {
-    const standalone = matchMedia('(display-mode: standalone)').matches;
-    setupCard.hidden = standalone || store.get('setupDismissed') === '1';
+  // ---------- optional upgrade ----------
+  // The app works fully in a plain browser tab (certificate warning bypassed).
+  // Installing the CA and the app is optional; it adds the Share-menu entry.
+  const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  let swActive = false; // a service worker registered: the phone trusts the certificate
+  const tipCard = $('#tip-card');
+  // After the first transfer that worked, show one tip about keeping the page handy.
+  function noteSuccess() {
+    if (store.get('firstSuccess') === '1') return;
+    store.set('firstSuccess', '1');
+    maybeShowTip();
+  }
+  function maybeShowTip() {
+    tipCard.hidden = standalone() || store.get('firstSuccess') !== '1' || store.get('tipDismissed') === '1';
+  }
+  function dismissTip() { store.set('tipDismissed', '1'); tipCard.hidden = true; }
+  $('#tip-dismiss').addEventListener('click', dismissTip);
+  tipCard.querySelector('[data-open="sheet-cert"]').addEventListener('click', dismissTip);
+  function updateAppRow() {
+    $('#app-row').hidden = standalone();
+    setMsg($('#app-row-sub'), [swActive ? 'settings.appSubTrusted' : 'settings.appSub']);
   }
 
   // ---------- connection ----------
@@ -816,7 +849,8 @@
     paired = true;
     store.set('paired', '1');
     setView('main');
-    maybeShowSetup();
+    maybeShowTip();
+    updateAppRow();
     updateEmpty();
     if (s === 'ok') connect(); else scheduleReconnect();
     if (sent) {
@@ -828,8 +862,16 @@
     if (share) { shareWaiting = false; sendShared(); } // offline is fine: the card offers Retry
   }
 
+  // Registration fails while the certificate isn't trusted (a tab where the
+  // warning was bypassed). That's the normal case, so stay silent: the app
+  // works without it, and the share target / offline shell come with the
+  // optional upgrade.
   if ('serviceWorker' in navigator && window.isSecureContext) {
-    addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => { /* untrusted cert: no SW */ }));
+    addEventListener('load', () => {
+      let reg;
+      try { reg = navigator.serviceWorker.register('/sw.js'); } catch { return; }
+      Promise.resolve(reg).then(() => { swActive = true; updateAppRow(); }, () => { /* untrusted cert: no SW */ });
+    });
   }
 
   start();

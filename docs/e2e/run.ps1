@@ -11,7 +11,7 @@ removes again at the end: HKCU Run value 'CopyApp', the SendTo shortcut, and
 files in Downloads\CopyApp (only those this test created).
 Refuses to run if copyapp.exe is already running.
 This covers the HTTP/exe behaviour; the 390x844 PWA UI was driven separately
-with Playwright (HTTPS errors ignored).
+with Playwright (HTTPS errors ignored, like a phone tab where the user tapped Advanced > Proceed).
 #>
 param([switch]$NoBuild)
 $ErrorActionPreference = 'Stop'
@@ -99,6 +99,12 @@ try {
     $st = Invoke-RestMethod "$B/status" -Headers $hdr -SkipCertificateCheck
     Check '/status has a short certificate code' ("$($st.shortFingerprint)".Length -ge 6) "$($st.shortFingerprint)"
     $r = Invoke-WebRequest "$B/" -Headers $hdr @opt; Check 'PWA index served' ($r.StatusCode -eq 200 -and $r.Content -match 'CopyApp')
+    # browser-tab first: no certificate step in the main flow, the app upgrade is optional (Settings)
+    Check 'PWA has no certificate onboarding card' ($r.Content -notmatch 'setup-card|cert-teaser')
+    Check 'PWA Settings has Verify connection + optional Make-it-an-app rows' ($r.Content -match 'id="verify-row"' -and $r.Content -match 'id="app-row"[^>]*data-open="sheet-cert"' -and $r.Content -match 'id="tip-card"')
+    $pg = (Invoke-WebRequest "$L/pairing" -Headers $lh @opt).Content
+    Check 'pairing page: exactly 2 steps' (([regex]::Matches($pg, '<li>')).Count -eq 2)
+    Check 'pairing page: short code in collapsed details, optional app section collapsed' ($pg -match '<details id="careful">' -and $pg -match '<details id="optional">' -and $pg -notmatch '<details open' -and $pg -match [regex]::Escape("$($st.shortFingerprint)"))
 
     # phone -> PC text (real Windows clipboard)
     Set-Clipboard 'SENTINEL-before'

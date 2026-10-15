@@ -120,24 +120,30 @@ body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:c
 .langs{display:inline-flex;border:1px solid var(--line);border-radius:10px;padding:2px;gap:2px}
 .langs button{background:transparent;color:var(--muted);padding:4px 12px;border-radius:8px;font-size:14px;font-weight:600}
 .langs button[aria-pressed="true"]{background:var(--accent);color:#fff}
-h1{margin:0 0 4px;font-size:24px;font-weight:600}
+h1{margin:0 0 4px;font-size:26px;font-weight:650}
 .sub{color:var(--muted);margin:0 0 20px}
 .qrbox{display:flex;flex-direction:column;align-items:center;gap:12px}
-.qr{width:280px;height:280px;background:#fff;border-radius:12px;padding:12px;border:1px solid var(--line)}
+.qr{width:340px;height:340px;max-width:80vw;max-height:80vw;background:#fff;border-radius:14px;padding:12px;border:1px solid var(--line)}
 .qr img{width:100%;height:100%;image-rendering:pixelated;display:block}
 .timer{font-variant-numeric:tabular-nums;font-size:15px;color:var(--muted)}
 .timer b{color:var(--fg);font-size:18px}
-ol{margin:0;padding-inline-start:20px}
-ol li{margin:0 0 10px}
+ol.steps{list-style:none;margin:0;padding:0;display:grid;gap:16px}
+ol.steps li{display:grid;grid-template-columns:40px 1fr;gap:14px;align-items:start;font-size:18px;line-height:1.45}
+.n{display:inline-grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;font-size:19px}
+ol.steps li span{padding-top:6px}
+.ready{margin:18px 0 0;color:var(--ok);font-weight:600}
 .note{color:var(--muted);font-size:14px}
-.fp{font-size:12px;line-height:1.4;color:var(--muted);margin-top:12px}
+details{margin-top:14px;border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+details+details{margin-top:10px}
+summary{cursor:pointer;font-size:14px;font-weight:600;color:var(--muted)}
+details[open] summary{margin-bottom:8px}
+details p{margin:0 0 8px;font-size:14px}
+.fp{font-size:12px;line-height:1.4;color:var(--muted);margin-top:8px}
 .fp bdi{font-family:Consolas,monospace;word-break:break-all}
-.fpbox{margin-top:16px;padding:16px 18px;border:2px solid var(--accent);border-radius:12px}
-.fplabel{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
-:lang(he) .fplabel{letter-spacing:0}
-.fpshort{font:700 32px/1.25 Consolas,monospace;letter-spacing:.06em;margin:4px 0 6px;white-space:nowrap}
-@media (max-width:420px){.fpshort{font-size:24px}}
-.state{display:none;flex-direction:column;align-items:center;justify-content:center;width:280px;height:280px;text-align:center;
+.fplabel{font-size:13px;font-weight:600;color:var(--muted)}
+.fpshort{font:700 22px/1.25 Consolas,monospace;letter-spacing:.04em;margin:2px 0 6px;white-space:nowrap}
+@media (max-width:420px){.fpshort{font-size:19px}}
+.state{display:none;flex-direction:column;align-items:center;justify-content:center;width:340px;height:340px;max-width:80vw;text-align:center;
  border:1px dashed var(--line);border-radius:12px;gap:12px;padding:16px}
 .big{font-size:48px;line-height:1}
 .ok{color:var(--ok)} .warn{color:var(--warn)}
@@ -168,20 +174,22 @@ body.paired #paired,body.expired #expired{display:flex}
  <section>
   <h1 data-k="pair.h1">{{index .S "pair.h1"}}</h1>
   <p class="sub" data-k="pair.sub">{{index .S "pair.sub"}}</p>
-  <ol>
-   <li data-k="pair.s1">{{index .S "pair.s1"}}</li>
-   <li><span data-k="pair.s2">{{index .S "pair.s2"}}</span>
-     <span class="note" data-k="pair.s2note">{{index .S "pair.s2note"}}</span></li>
-   <li><span data-k="pair.s3">{{index .S "pair.s3"}}</span>
-     <span class="note" data-k="pair.s3note">{{index .S "pair.s3note"}}</span></li>
-   <li data-k="pair.s4">{{index .S "pair.s4"}}</li>
+  <ol class="steps">
+   <li><b class="n">1</b><span data-k="pair.s1">{{index .S "pair.s1"}}</span></li>
+   <li><b class="n">2</b><span data-k="pair.s2">{{index .S "pair.s2"}}</span></li>
   </ol>
-  <div class="fpbox">
+  <p class="ready" data-k="pair.ready">{{index .S "pair.ready"}}</p>
+  <details id="careful">
+   <summary data-k="pair.carefulSum">{{index .S "pair.carefulSum"}}</summary>
    <div class="fplabel" data-k="pair.fpLabel">{{index .S "pair.fpLabel"}}</div>
    <div class="fpshort"><bdi dir="ltr">{{.Short}}</bdi></div>
-   <div class="note" data-k="pair.fpNote">{{index .S "pair.fpNote"}}</div>
-  </div>
-  <div class="fp"><span data-k="pair.fpFull">{{index .S "pair.fpFull"}}</span><br><bdi dir="ltr">{{.Fingerprint}}</bdi></div>
+   <p class="note" data-k="pair.fpNote">{{index .S "pair.fpNote"}}</p>
+   <div class="fp"><span data-k="pair.fpFull">{{index .S "pair.fpFull"}}</span><br><bdi dir="ltr">{{.Fingerprint}}</bdi></div>
+  </details>
+  <details id="optional">
+   <summary data-k="pair.optSum">{{index .S "pair.optSum"}}</summary>
+   <p data-k="pair.opt">{{index .S "pair.opt"}}</p>
+  </details>
  </section>
 </main>
 <script type="application/json" id="strings" nonce="{{.Nonce}}">{{.Dict}}</script>

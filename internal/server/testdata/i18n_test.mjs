@@ -90,4 +90,13 @@ for (const code of ['empty', 'not_png', 'too_large', 'too_many_pixels', 'unautho
   assert.ok(I.has(`err.${code}.t`) && I.has(`err.${code}.d`), `error ${code}`);
 }
 
+// Browser-tab first: no certificate step in the main flow; the app upgrade is optional (Settings + one tip).
+assert.ok(!/setup-card|cert-teaser/.test(html), 'the certificate must not be a main onboarding step');
+for (const id of ['tip-card', 'tip-dismiss', 'verify-row', 'app-row', 'sheet-cert', 'cert-download']) assert.ok(html.includes(`id="${id}"`), `index.html lacks #${id}`);
+assert.ok(/id="app-row"[^>]*data-open="sheet-cert"/.test(html), 'Settings "Make it a real app" opens the certificate sheet');
+assert.ok(/id="verify-row"[\s\S]{0,400}data-fp-short/.test(html), 'Verify connection shows the short certificate code');
+for (const k of ['setup.title', 'pair.certB', 'settings.cert']) assert.ok(!(k in STR.en), `stale key ${k}`);
+assert.match(STR.en['pair.s3'], /Proceed/, 'pairing steps explain Advanced > Proceed');
+assert.ok(/writeText[\s\S]*legacyCopy/.test(app) && /isSecureContext/.test(app), 'clipboard fallbacks');
+
 console.log(`i18n.js ok (${keys.length} keys, ${used.size} used)`);

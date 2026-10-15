@@ -70,10 +70,6 @@
     <li><span class="step-n">3</span><p data-i18n-html="pair.s3"></p></li>
   </ol>
 
-  <button class="cert-teaser" type="button" data-open="sheet-cert">
-    <svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg>
-    <span><b data-i18n="pair.certB"></b><br><span data-i18n="pair.certSub"></span></span>
-  </button>
 </section>
 
 <!-- Connected -->
@@ -103,14 +99,15 @@
   </div>
 
   <main class="feed-wrap" id="feed-wrap">
-    <div class="setup-card" id="setup-card" hidden>
-      <svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg>
+    <!-- One-time tip after the first successful transfer. No certificate needed. -->
+    <div class="tip-card" id="tip-card" role="status" hidden>
+      <svg class="ic" aria-hidden="true"><use href="#i-phone"/></svg>
       <div>
-        <b data-i18n="setup.title"></b>
-        <p data-i18n="setup.text"></p>
-        <div class="setup-actions">
-          <button type="button" class="btn btn-primary" data-open="sheet-cert" data-i18n="setup.how"></button>
-          <button type="button" class="btn btn-ghost" id="setup-dismiss" data-i18n="setup.later"></button>
+        <b data-i18n="tip.title"></b>
+        <p data-i18n-html="tip.text"></p>
+        <div class="tip-actions">
+          <button type="button" class="btn btn-primary" id="tip-dismiss" data-i18n="tip.ok"></button>
+          <button type="button" class="btn btn-ghost" data-open="sheet-cert" data-i18n="tip.app"></button>
         </div>
       </div>
     </div>
@@ -164,16 +161,14 @@
 <dialog class="sheet" id="sheet-settings" aria-labelledby="settings-title">
   <div class="sheet-grip" aria-hidden="true"></div>
   <h2 class="sheet-title" id="settings-title" data-i18n="settings.title"></h2>
-  <p class="sheet-text" data-i18n-html="settings.text"></p>
-  <div class="fp-check">
-    <span class="fp-label" data-i18n="fp.label"></span>
-    <p class="fp-short" data-i18n-attr="aria-label:fp.label"><bdi dir="ltr" data-fp-short>…</bdi></p>
-  </div>
-  <p class="fingerprint" data-i18n-attr="aria-label:fp.full"><bdi dir="ltr" id="fingerprint">…</bdi></p>
   <div class="sheet-list">
-    <button type="button" class="sheet-item" data-open="sheet-cert">
+    <div class="sheet-item sheet-item-static" id="verify-row">
       <svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg>
-      <span><b data-i18n="settings.cert"></b><small data-i18n="settings.certSub"></small></span>
+      <span><b data-i18n="settings.verify"></b><bdi class="verify-code" dir="ltr" data-fp-short>…</bdi><small data-i18n="settings.verifySub"></small></span>
+    </div>
+    <button type="button" class="sheet-item" id="app-row" data-open="sheet-cert">
+      <svg class="ic" aria-hidden="true"><use href="#i-phone"/></svg>
+      <span><b data-i18n="settings.app"></b><small id="app-row-sub" data-i18n="settings.appSub"></small></span>
     </button>
     <button type="button" class="sheet-item sheet-item-danger" id="unpair-btn">
       <svg class="ic" aria-hidden="true"><use href="#i-unlink"/></svg>
@@ -195,7 +190,6 @@
   <a class="btn btn-primary btn-block" id="cert-download" href="/ca.crt" download="copyapp-ca.crt">
     <svg class="ic" aria-hidden="true"><use href="#i-download"/></svg> <span data-i18n="cert.download"></span>
   </a>
-  <p class="sheet-hint" id="cert-hint" data-i18n-html="cert.hint"></p>
   <ol class="cert-steps">
     <li>
       <div class="mock" aria-hidden="true">
@@ -223,6 +217,8 @@
     </li>
   </ol>
   <p class="sheet-hint" data-i18n="cert.vary"></p>
+  <p class="sheet-text cert-after" data-i18n-html="cert.after"></p>
+  <p class="fingerprint" data-i18n-attr="aria-label:fp.full"><bdi dir="ltr" id="fingerprint">…</bdi></p>
   <button type="button" class="btn btn-quiet btn-block" data-close data-i18n="close"></button>
 </dialog>
 
