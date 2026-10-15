@@ -159,16 +159,26 @@ func copyFile(src, dst string, wait time.Duration) error {
 // Install copies src to p.Exe() (unless identical) and (re)creates the
 // shortcuts. It reports whether the exe was replaced.
 func Install(p Paths, src string) (copied bool, err error) {
+	if copied, err = CopyExe(p, src); err != nil {
+		return copied, err
+	}
+	return copied, CreateShortcuts(p)
+}
+
+// CopyExe puts src at p.Exe() (unless identical). It is the fast part of
+// Install; the installed copy then creates the shortcuts itself, so the user
+// sees the window sooner.
+func CopyExe(p Paths, src string) (copied bool, err error) {
 	if err := os.MkdirAll(p.InstallDir, 0o755); err != nil {
 		return false, err
 	}
-	if !SameFile(src, p.Exe()) {
-		if err := copyFile(src, p.Exe(), 15*time.Second); err != nil {
-			return false, fmt.Errorf("copy to %s: %w", p.InstallDir, err)
-		}
-		copied = true
+	if SameFile(src, p.Exe()) {
+		return false, nil
 	}
-	return copied, CreateShortcuts(p)
+	if err := copyFile(src, p.Exe(), 15*time.Second); err != nil {
+		return false, fmt.Errorf("copy to %s: %w", p.InstallDir, err)
+	}
+	return true, nil
 }
 
 const shortcutScript = `$ErrorActionPreference='Stop'

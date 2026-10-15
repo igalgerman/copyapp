@@ -181,7 +181,7 @@ button[disabled]{opacity:.6;cursor:progress}
 .muted,.note{color:var(--muted)}
 .note{font-size:14px}
 /* status */
-.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px 20px;margin:0}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px 20px;margin:0}
 .facts div{min-width:0}
 .facts dt{font-size:13px;font-weight:600;color:var(--muted)}
 .facts dd{margin:2px 0 0;font-weight:600;overflow-wrap:anywhere}
@@ -229,6 +229,7 @@ details p{margin:0 0 8px;font-size:14px}
 .before li{display:grid;grid-template-columns:24px 1fr;gap:10px;align-items:start;font-size:15px;line-height:1.45}
 .before li>svg{width:22px;height:22px;margin-top:1px}
 .ssid{font-weight:800;white-space:nowrap}
+.before bdi,#addr{white-space:nowrap}
 .ic{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 details.trouble{border:2px solid var(--butter-line)}
 details.trouble summary{color:var(--fg);font-size:15px}
@@ -258,7 +259,7 @@ body.offline #offline{display:block}
 @media (max-width:640px){.row{grid-template-columns:1fr}}
 .row>.lbl{font-weight:650;padding-top:6px}
 .opts{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
-label.opt{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer;align-items:start}
+label.opt{display:grid;grid-template-columns:auto 1fr;align-content:start;gap:2px 10px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer;align-items:start}
 label.opt:has(input:checked){border-color:var(--accent);background:var(--accent-bg)}
 label.opt input{margin:4px 0 0;accent-color:var(--accent)}
 label.opt b{font-weight:650}
@@ -274,6 +275,10 @@ select{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(
 .switch input:checked+.sw::after{inset-inline-start:23px}
 #unNote{display:none;margin:8px 0 0}
 #unNote.show{display:block}
+#msg{position:fixed;bottom:16px;left:16px;right:16px;margin:0 auto;max-width:560px;background:var(--fg);color:var(--bg);border-radius:12px;padding:12px 16px;font-weight:600;box-shadow:0 8px 30px rgba(0,0,0,.25);z-index:5}
+#msg:empty{display:none}
+.warnline{margin:12px 0 0;padding:8px 12px;border-radius:10px;background:var(--accent-bg);color:var(--fg)}
+#msg.bad{background:var(--danger);color:#fff}
 footer{font-size:13px;color:var(--muted);padding:0 8px 12px;display:grid;gap:4px}
 footer bdi{font-family:Consolas,monospace;overflow-wrap:anywhere}
 </style>
@@ -299,8 +304,10 @@ footer bdi{font-family:Consolas,monospace;overflow-wrap:anywhere}
   <div><dt data-k="home.address">{{index .S "home.address"}}</dt><dd><bdi dir="ltr" id="addr">{{.Snap.Address}}</bdi></dd></div>
   <div><dt data-k="home.hotkey">{{index .S "home.hotkey"}}</dt><dd><kbd dir="ltr" id="hotkey">{{.Snap.Hotkey}}</kbd></dd></div>
  </dl>
+ <p class="note warnline" id="pairedFrom" hidden></p>
  <div class="statusbar">
-  <button type="button" class="ghost" id="repair" data-k="home.repair">{{index .S "home.repair"}}</button>
+  <button type="button" id="sendNow" data-k="home.sendNow">{{index .S "home.sendNow"}}</button>
+  <button type="button" class="ghost" id="repair" data-k="home.repair"{{if not .Snap.Phone.Paired}} hidden{{end}}>{{index .S "home.repair"}}</button>
  </div>
 </section>
 
@@ -379,17 +386,18 @@ footer bdi{font-family:Consolas,monospace;overflow-wrap:anywhere}
 
 <footer>
  <div><span data-k="home.log">{{index .S "home.log"}}</span> <bdi dir="ltr" id="logPath">{{.Snap.LogPath}}</bdi></div>
- {{if .Snap.Version}}<div>CopyApp <bdi dir="ltr">{{.Snap.Version}}</bdi></div>{{end}}
+ {{if .Snap.Version}}<div>CopyApp · <span data-k="home.version">{{index .S "home.version"}}</span> <bdi dir="ltr" id="version">{{.Snap.Version}}</bdi></div>{{end}}
 </footer>
 </div>
+<p id="msg" role="status" aria-live="polite"></p>
 <script type="application/json" id="strings" nonce="{{.Nonce}}">{{.Dict}}</script>
 <script nonce="{{.Nonce}}">
 (function(){
  var b=document.body, root=document.documentElement, secs={{.State.SecondsLeft}}, wasOpen={{.State.Open}};
- var dict=JSON.parse(document.getElementById('strings').textContent), lang=root.lang, busy=0, last=null;
+ var dict=JSON.parse(document.getElementById('strings').textContent), lang=root.lang, busy=0, last=null, autoOpened=false;
  function $(id){return document.getElementById(id)}
  function get(k){return (dict[lang]||{})[k]||dict.en[k]||k}
- function fill(k,o){var s=get(k);for(var x in o){s=s.split('{'+x+'}').join(o[x])}return s}
+ function fill(k,o){var s=get(k);for(var x in o){s=s.split('{'+x+'}').join('\u2068'+o[x]+'\u2069')}return s}
  function ms(v){return Math.floor(v/60)+':'+String(v%60).padStart(2,'0')}
  function size(n){
   var nf=new Intl.NumberFormat(lang,{maximumFractionDigits:n>=1073741824||n<10485760?1:0});
@@ -432,7 +440,10 @@ footer bdi{font-family:Consolas,monospace;overflow-wrap:anywhere}
    .then(function(r){if(!r.ok) throw r; return r.status===200?r.json():null})
    .finally(function(){busy--});
  }
- function setLang(l){apply(l); post('/local/settings',{language:l}).then(render).catch(function(){})}
+ var msgT=0;
+ function say(k,bad){var m=$('msg'); m.textContent=get(k); m.className=bad?'bad':''; clearTimeout(msgT); msgT=setTimeout(function(){m.textContent=''},bad?8000:4000)}
+ function failed(e){say(e&&e.status===400?'home.badFolder':'home.saveFail',true); poll1()}
+ function setLang(l){apply(l); post('/local/settings',{language:l}).then(render).catch(failed)}
  function render(s){
 
   if(!s.pairing) return;
@@ -440,11 +451,17 @@ footer bdi{font-family:Consolas,monospace;overflow-wrap:anywhere}
   var p=s.pairing;
   b.classList.toggle('paired',p.paired); b.classList.toggle('expired',!p.paired&&!p.open);
   if(p.open&&!wasOpen) $('qrimg').src='/qr?'+Date.now();
+  // No phone yet and the code ran out (e.g. CopyApp started with Windows):
+  // show a fresh code instead of asking for a click.
+  if(!autoOpened&&!p.open&&!p.paired&&!s.phone.paired){autoOpened=true; fetch('/pairing/open',{method:'POST'}).then(function(){$('qrimg').src='/qr?'+Date.now(); wasOpen=true; poll1()}).catch(function(){})}
   wasOpen=p.open; secs=Math.max(0,p.secondsLeft|0);
   var left=$('left'); if(left) left.textContent=ms(secs);
   $('phoneDot').classList.toggle('on',s.phone.paired&&s.phone.connected);
   $('phoneState').textContent=get(s.phone.paired?'home.paired':'home.notPaired');
   $('phoneSeen').textContent=!s.phone.paired?'':s.phone.connected?get('home.connected'):s.phone.lastSeen?fill('home.lastSeen',{t:ago(s.phone.lastSeen)}):get('home.notSeen');
+  $('repair').hidden=!s.phone.paired;
+  var pf=$('pairedFrom');
+  if(s.phone.paired&&s.phone.pairedFrom){pf.textContent=fill('home.pairedFrom',{ip:s.phone.pairedFrom,t:new Date(s.phone.pairedAt).toLocaleString(lang,{dateStyle:'short',timeStyle:'short'})}); pf.hidden=false}else{pf.hidden=true}
   if(s.wifi){var bd=document.createElement('bdi');bd.textContent=s.wifi;$('wifi').replaceChildren(bd)}else{$('wifi').textContent=get('home.noWifi')}
   b.dataset.wifi=s.wifi||'';
   $('addr').textContent=s.address; $('hotkey').textContent=s.hotkey; $('logPath').textContent=s.logPath;
@@ -471,17 +488,22 @@ footer bdi{font-family:Consolas,monospace;overflow-wrap:anywhere}
  function poll(){
   fetch('/local/state',{cache:'no-store'}).then(function(r){if(!r.ok) throw r; return r.json()}).then(function(s){
    b.classList.remove('offline'); render(s); setTimeout(poll,1000);
-  }).catch(function(){b.classList.add('offline'); setTimeout(poll,3000)});
+  }).catch(function(e){
+   // 403: CopyApp restarted and forgot this window's session; anything else: not running.
+   var k=e&&e.status===403?'home.reopen':'home.offline', o=$('offline');
+   o.dataset.k=k; o.textContent=get(k); b.classList.add('offline'); setTimeout(poll,3000)});
  }
  $('langs').addEventListener('click',function(e){var btn=e.target.closest('[data-lang]'); if(btn) setLang(btn.dataset.lang)});
  $('langSel').addEventListener('change',function(){setLang(this.value)});
- document.querySelectorAll('input[name=mode]').forEach(function(r){r.addEventListener('change',function(){post('/local/settings',{receiveMode:this.value}).then(render).catch(function(){})})});
- $('maxSel').addEventListener('change',function(){post('/local/settings',{maxBytes:+this.value}).then(render).catch(function(){})});
- $('auto').addEventListener('change',function(){var c=this; post('/local/settings',{autostart:c.checked}).then(render).catch(function(){c.checked=!c.checked})});
+ document.querySelectorAll('input[name=mode]').forEach(function(r){r.addEventListener('change',function(){post('/local/settings',{receiveMode:this.value}).then(render).catch(failed)})});
+ $('maxSel').addEventListener('change',function(){post('/local/settings',{maxBytes:+this.value}).then(render).catch(failed)});
+ $('auto').addEventListener('change',function(){var c=this; post('/local/settings',{autostart:c.checked}).then(render).catch(function(){c.checked=!c.checked; say('home.autostartFail',true)})});
  $('choose').addEventListener('click',function(){var btn=this; btn.disabled=true;
-  post('/local/choose-folder').then(function(r){if(r) $('saveDir').textContent=r.saveDir}).catch(function(){}).finally(function(){btn.disabled=false})});
+  post('/local/choose-folder').then(function(r){if(r) $('saveDir').textContent=r.saveDir}).catch(failed).finally(function(){btn.disabled=false})});
  $('openDir').addEventListener('click',function(){post('/local/open-folder').catch(function(){})});
- $('repair').addEventListener('click',function(){post('/local/repair').then(function(){$('qrimg').src='/qr?'+Date.now(); wasOpen=true}).catch(function(){})});
+ $('sendNow').addEventListener('click',function(){var btn=this; btn.disabled=true;
+  post('/local/send-clipboard').then(function(r){var k='home.res.'+((r&&r.result)||'failed'); say(k,k!=='home.res.sent')}).catch(function(){say('home.res.failed',true)}).finally(function(){btn.disabled=false})});
+ $('repair').addEventListener('click',function(){if(!confirm(get('home.repairConfirm'))) return; post('/local/repair').then(function(){$('qrimg').src='/qr?'+Date.now(); wasOpen=true}).catch(function(){})});
  $('uninstall').addEventListener('click',function(){post('/local/uninstall').then(function(){$('unNote').classList.add('show')}).catch(function(){})});
  $('again').addEventListener('click',function(){
   fetch('/pairing/open',{method:'POST'}).then(function(){$('qrimg').src='/qr?'+Date.now(); wasOpen=true; poll1()});

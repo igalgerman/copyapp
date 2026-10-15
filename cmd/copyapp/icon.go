@@ -6,8 +6,8 @@ import (
 	"math"
 )
 
-// makeICO draws a 32x32 rounded blue square with two overlapping white
-// "pages" (plus a green tick when check is set, shown briefly after a send)
+// makeICO draws a 32x32 rounded blue square with a yellow and a white
+// "page" (the app icon's colours) (plus a green tick when check is set, shown briefly after a send)
 // and returns it as a BMP-based .ico (what the Windows tray loads).
 func makeICO(check bool) []byte {
 	const n = 32
@@ -22,7 +22,7 @@ func makeICO(check bool) []byte {
 			cx := math.Min(math.Max(float64(x), 7), n-1-7)
 			cy := math.Min(math.Max(float64(y), 7), n-1-7)
 			if math.Hypot(float64(x)-cx, float64(y)-cy) <= 7 {
-				set(x, y, 0xD7, 0x78, 0x1E, 0xFF)
+				set(x, y, 0xE8, 0x44, 0x2E, 0xFF)
 			}
 		}
 	}
@@ -33,11 +33,10 @@ func makeICO(check bool) []byte {
 			}
 		}
 	}
-	rect(7, 6, 19, 22, 0xB0, 0xB0, 0xB0)
-	rect(8, 7, 18, 21, 0xE8, 0xE8, 0xE8)
+	rect(7, 6, 19, 22, 0x47, 0xD4, 0xFF)
 	rect(12, 10, 24, 26, 0xFF, 0xFF, 0xFF)
 	for _, y := range []int{14, 17, 20} {
-		rect(14, y, 22, y+1, 0xD7, 0x78, 0x1E)
+		rect(14, y, 22, y+1, 0xE8, 0x44, 0x2E)
 	}
 	if check { // green disc with a white tick, bottom right: "sent"
 		const cx, cy, rad = 22.5, 22.5, 9.5

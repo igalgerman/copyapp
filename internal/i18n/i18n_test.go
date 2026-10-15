@@ -58,7 +58,7 @@ func TestSetLoadSave(t *testing.T) {
 	if Lang() != "ru" {
 		t.Fatalf("loaded %q", Lang())
 	}
-	if got := In("en", "toast.savedMore", "a.txt", 2); got != "a.txt and 2 more" {
+	if got := In("en", "toast.savedMore", "a.txt", 2); got != "\u2068a.txt\u2069 and 2 more" { // file names are bidi-isolated
 		t.Fatal(got)
 	}
 	if In("en", "no.such.key") != "no.such.key" || Dir("he") != "rtl" || Dir("ru") != "ltr" {

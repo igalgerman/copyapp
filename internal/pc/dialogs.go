@@ -18,7 +18,7 @@ const (
 	mbDefButton2    = 0x100
 	mbSetForeground = 0x10000
 	mbTopmost       = 0x40000
-	mbRTLReading    = 0x2000
+	mbRTLReading    = 0x100000
 	mbRight         = 0x80000
 	idYes           = 6
 	beepOK          = mbOK
