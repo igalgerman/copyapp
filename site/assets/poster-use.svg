@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
+  <defs>
+    <radialGradient id="g1" cx="80%" cy="20%" r="75%"><stop offset="0" stop-color="#2E44E8"/><stop offset="1" stop-color="#0C1029"/></radialGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#g1)"/>
+  <g transform="rotate(-9 470 360)"><rect x="330" y="170" width="300" height="370" rx="52" fill="#FFD447"/></g>
+  <g transform="rotate(7 760 380)">
+    <rect x="610" y="190" width="320" height="390" rx="56" fill="#fff"/>
+    <rect x="672" y="276" width="196" height="32" rx="16" fill="#2E44E8"/>
+    <rect x="672" y="340" width="140" height="32" rx="16" fill="#2E44E8" opacity=".45"/>
+    <rect x="672" y="404" width="170" height="32" rx="16" fill="#2E44E8" opacity=".45"/>
+  </g>
+  <path d="M240 600c180-120 620-120 800 0" fill="none" stroke="#FFD447" stroke-opacity=".5" stroke-width="5" stroke-dasharray="8 14" stroke-linecap="round"/>
+  <circle cx="640" cy="360" r="70" fill="#FFD447"/>
+  <circle cx="640" cy="360" r="92" fill="none" stroke="#FFD447" stroke-opacity=".3" stroke-width="16"/>
+  <path d="M620 322v76l62-38z" fill="#151B33"/>
+</svg>

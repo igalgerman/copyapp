@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="light dark">
+<title>CopyApp — 404</title>
+<!-- Self-contained on purpose: a 404 can be served at any depth, so it uses no relative assets. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='116' fill='%232E44E8'/%3E%3Crect x='104' y='108' width='196' height='240' rx='34' fill='%23FFD447' transform='rotate(-9 200 230)'/%3E%3Crect x='196' y='160' width='208' height='252' rx='36' fill='%23fff' transform='rotate(7 300 290)'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#EEF1F8;--ink:#151B33;--muted:#4B5371;--cobalt:#2E44E8;--butter:#FFD447;--surface:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#0C1029;--ink:#ECEFFC;--muted:#AAB2D2;--cobalt:#4459F5;--surface:#161C42}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--ink);font:400 1.05rem/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;padding:24px}
+main{text-align:center;max-width:520px}
+.cards{position:relative;width:160px;height:150px;margin:0 auto 28px}
+.cards i{position:absolute;width:92px;height:116px;border-radius:22px}
+.cards i:first-child{background:var(--butter);left:14px;top:6px;transform:rotate(-12deg);animation:a 3s ease-in-out infinite alternate}
+.cards i:last-child{background:var(--surface);right:14px;top:22px;transform:rotate(9deg);box-shadow:0 20px 40px -20px rgba(0,0,0,.4);animation:b 3s ease-in-out infinite alternate}
+@keyframes a{to{transform:rotate(-20deg) translateX(-8px)}}
+@keyframes b{to{transform:rotate(16deg) translateX(8px)}}
+@media (prefers-reduced-motion:reduce){.cards i{animation:none!important}}
+h1{font-size:clamp(1.8rem,5vw,2.6rem);line-height:1.15;margin:0 0 .6rem}
+p{color:var(--muted);margin:.2rem 0}
+a{display:inline-block;margin-top:24px;background:var(--cobalt);color:#fff;text-decoration:none;font-weight:700;padding:.85em 1.4em;border-radius:16px}
+a:focus-visible{outline:3px solid var(--butter);outline-offset:3px}
+</style>
+</head>
+<body>
+<main>
+  <div class="cards" aria-hidden="true"><i></i><i></i></div>
+  <h1 id="t">העמוד הזה לא הגיע ליעד.</h1>
+  <p id="d">אולי הקישור השתנה. כל השאר נמצא בעמוד הבית.</p>
+  <a id="home" href="/copyapp/">לעמוד הבית של CopyApp</a>
+</main>
+<script>
+(function(){
+  var T={he:["העמוד הזה לא הגיע ליעד.","אולי הקישור השתנה. כל השאר נמצא בעמוד הבית.","לעמוד הבית של CopyApp"],
+         en:["This page didn’t make it across.","The link may have changed. Everything else is on the home page.","Go to the CopyApp home page"],
+         ru:["Эта страница не дошла.","Возможно, ссылка изменилась. Всё остальное — на главной странице.","На главную страницу CopyApp"]};
+  var l="he";try{var s=localStorage.getItem("copyapp.lang");if(s==="en"||s==="ru")l=s;}catch(e){}
+  var d=document.documentElement;d.lang=l;d.dir=l==="he"?"rtl":"ltr";
+  document.getElementById("t").textContent=T[l][0];document.getElementById("d").textContent=T[l][1];
+  var a=document.getElementById("home");a.textContent=T[l][2];
+  /* Works on GitHub Pages (/copyapp/), at a domain root, and locally. */
+  var p=location.pathname;a.href=location.protocol==="file:"?"index.html":(p.indexOf("/copyapp/")===0||p==="/copyapp"?"/copyapp/":"/");
+})();
+</script>
+</body>
+</html>

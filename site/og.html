@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>CopyApp social card</title>
+<!-- Source for assets/og.png (1200x630). Re-render with a headless browser screenshot at 1200x630. -->
+<style>
+@font-face{font-family:Bricolage;src:url("assets/bricolage.woff2") format("woff2");font-weight:200 800}
+*{box-sizing:border-box}
+html,body{margin:0;width:1200px;height:630px;overflow:hidden}
+body{background:#EEF1F8;color:#151B33;font-family:system-ui,"Segoe UI",sans-serif;position:relative}
+.glow{position:absolute;width:900px;height:900px;right:-300px;top:-380px;border-radius:50%;background:radial-gradient(circle,rgba(46,68,232,.32),transparent 62%)}
+.glow2{position:absolute;width:600px;height:600px;left:-260px;bottom:-320px;border-radius:50%;background:radial-gradient(circle,rgba(255,212,71,.55),transparent 64%)}
+.brand{position:absolute;left:72px;top:64px;display:flex;align-items:center;gap:16px;font:800 44px/1 Bricolage,sans-serif;letter-spacing:-.04em}
+.brand img{width:64px;height:64px}
+h1{position:absolute;left:72px;top:150px;margin:0;font:800 84px/.96 Bricolage,sans-serif;letter-spacing:-.045em;width:700px}
+h1 span{display:block}
+h1 span+span{color:#2E44E8}
+.he{position:absolute;left:72px;top:418px;font:700 34px/1.2 "Segoe UI",system-ui,sans-serif;color:#4B5371;direction:rtl}
+.ribbon{position:absolute;left:-20px;right:-20px;bottom:38px;height:74px;background:#2E44E8;transform:rotate(-1.6deg);display:flex;align-items:center;gap:44px;padding-left:92px;color:#fff;font:700 28px/1 Bricolage,sans-serif}
+.ribbon b{color:#FFD447;font-weight:800}
+.cards{position:absolute;right:70px;top:120px;width:360px;height:380px}
+.c1{position:absolute;left:0;top:10px;width:220px;height:270px;border-radius:40px;background:#FFD447;transform:rotate(-9deg);box-shadow:0 30px 60px -30px rgba(21,27,51,.5)}
+.c2{position:absolute;left:110px;top:70px;width:236px;height:286px;border-radius:42px;background:#fff;transform:rotate(7deg);box-shadow:0 40px 70px -30px rgba(21,27,51,.55);padding:62px 44px}
+.c2 i{display:block;height:24px;border-radius:12px;background:#2E44E8;margin-bottom:24px}
+.c2 i:nth-child(1){width:146px}.c2 i:nth-child(2){width:104px;opacity:.45}.c2 i:nth-child(3){width:128px;opacity:.45}
+</style>
+</head>
+<body>
+<div class="glow"></div><div class="glow2"></div>
+<div class="brand"><img src="assets/icon.svg" alt="">CopyApp</div>
+<h1><span>From your PC to your phone.</span><span>And back.</span></h1>
+<div class="he">מהמחשב לטלפון. ובחזרה.</div>
+<div class="cards"><div class="c1"></div><div class="c2"><i></i><i></i><i></i></div></div>
+<div class="ribbon"><span>Windows <b>⇄</b> Android</span><span>No cloud</span><span>No account</span><span>Free</span></div>
+</body>
+</html>

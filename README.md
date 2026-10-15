@@ -1,6 +1,6 @@
 # CopyApp
 
-**[עברית](README.he.md) · [Русский](README.ru.md) · English**
+**[עברית](README.he.md) · [Русский](README.ru.md) · English · [Website](https://igalgerman.github.io/copyapp/)**
 
 CopyApp lets you copy and paste between your Windows PC and your Android phone.
 
