@@ -3,8 +3,11 @@ package server
 import (
 	"html/template"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/igalgerman/copyapp/internal/i18n"
 	"github.com/igalgerman/copyapp/internal/tlsutil"
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -73,30 +76,50 @@ func (s *Server) pairingPage(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
 	st := s.state()
+	// Rendered in the tray language; the page's script switches live and
+	// remembers the visitor's choice in localStorage.
+	lang := i18n.Lang()
+	dict := i18n.Prefixed("pair.")
+	str := map[string]template.HTML{}
+	for k, v := range dict[lang] {
+		str[k] = template.HTML(v) // our own strings; they may hold <b>/<code>
+	}
+	str["pair.expires"] = template.HTML(strings.Replace(dict[lang]["pair.expires"], "{s}",
+		`<b id="left">`+strconv.Itoa(st.SecondsLeft)+`</b>`, 1))
 	pairingTmpl.Execute(w, map[string]any{
 		"Nonce":       nonce,
 		"State":       st,
 		"Fingerprint": fingerprint(s.cfg.CAPEM),
 		"Short":       tlsutil.ShortFingerprint(s.cfg.CAPEM),
 		"Stamp":       time.Now().UnixNano(),
+		"Lang":        lang,
+		"Dir":         i18n.Dir(lang),
+		"S":           str,
+		"Dict":        dict,
 	})
 }
 
 var pairingTmpl = template.Must(template.New("pairing").Parse(`<!doctype html>
-<html lang="en">
+<html lang="{{.Lang}}" dir="{{.Dir}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pair your phone – CopyApp</title>
+<title>{{index .S "pair.htmlTitle"}}</title>
 <style nonce="{{.Nonce}}">
 :root{--bg:#f4f5f7;--card:#fff;--fg:#1b1d22;--muted:#5d6370;--line:#e3e5ea;--accent:#2f6bff;--ok:#16a34a;--warn:#b45309}
 @media (prefers-color-scheme:dark){:root{--bg:#121318;--card:#1c1e25;--fg:#eceef3;--muted:#a0a6b4;--line:#2c2f39;--accent:#7aa2ff;--ok:#4ade80;--warn:#fbbf24}}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--fg);
  font:16px/1.5 "Segoe UI",system-ui,sans-serif;padding:24px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:760px;width:100%;padding:32px;
- display:grid;grid-template-columns:auto 1fr;gap:32px;box-shadow:0 8px 30px rgba(0,0,0,.06)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:760px;width:100%;padding:20px 32px 32px;
+ display:grid;grid-template-columns:auto 1fr;gap:20px 32px;box-shadow:0 8px 30px rgba(0,0,0,.06)}
 @media (max-width:640px){.card{grid-template-columns:1fr}}
+.card>section{min-width:0}
+.top{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{font-weight:700;font-size:18px}
+.langs{display:inline-flex;border:1px solid var(--line);border-radius:10px;padding:2px;gap:2px}
+.langs button{background:transparent;color:var(--muted);padding:4px 12px;border-radius:8px;font-size:14px;font-weight:600}
+.langs button[aria-pressed="true"]{background:var(--accent);color:#fff}
 h1{margin:0 0 4px;font-size:24px;font-weight:600}
 .sub{color:var(--muted);margin:0 0 20px}
 .qrbox{display:flex;flex-direction:column;align-items:center;gap:12px}
@@ -104,12 +127,14 @@ h1{margin:0 0 4px;font-size:24px;font-weight:600}
 .qr img{width:100%;height:100%;image-rendering:pixelated;display:block}
 .timer{font-variant-numeric:tabular-nums;font-size:15px;color:var(--muted)}
 .timer b{color:var(--fg);font-size:18px}
-ol{margin:0;padding-left:20px}
+ol{margin:0;padding-inline-start:20px}
 ol li{margin:0 0 10px}
 .note{color:var(--muted);font-size:14px}
-.fp{font:12px/1.4 Consolas,monospace;color:var(--muted);word-break:break-all;margin-top:12px}
+.fp{font-size:12px;line-height:1.4;color:var(--muted);margin-top:12px}
+.fp bdi{font-family:Consolas,monospace;word-break:break-all}
 .fpbox{margin-top:16px;padding:16px 18px;border:2px solid var(--accent);border-radius:12px}
 .fplabel{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+:lang(he) .fplabel{letter-spacing:0}
 .fpshort{font:700 32px/1.25 Consolas,monospace;letter-spacing:.06em;margin:4px 0 6px;white-space:nowrap}
 @media (max-width:420px){.fpshort{font-size:24px}}
 .state{display:none;flex-direction:column;align-items:center;justify-content:center;width:280px;height:280px;text-align:center;
@@ -124,43 +149,72 @@ body.paired #paired,body.expired #expired{display:flex}
 </head>
 <body class="{{if .State.Paired}}paired{{else if not .State.Open}}expired{{end}}">
 <main class="card">
+ <header class="top">
+  <span class="brand">CopyApp</span>
+  <div class="langs" role="group" aria-label="{{index .S "pair.lang"}}" id="langs">
+   <button type="button" data-lang="he" lang="he" aria-pressed="false">עב</button>
+   <button type="button" data-lang="ru" lang="ru" aria-pressed="false">РУ</button>
+   <button type="button" data-lang="en" lang="en" aria-pressed="false">EN</button>
+  </div>
+ </header>
  <section class="qrbox" aria-live="polite">
-  <div class="qr"><img src="/qr?{{.Stamp}}" alt="Pairing QR code" width="256" height="256"></div>
-  <div class="timer">Code expires in <b id="left">{{.State.SecondsLeft}}</b> s</div>
-  <div class="state" id="paired"><div class="big ok">&#10003;</div><div><b>Phone paired</b></div>
-   <div class="note">You can close this window.</div></div>
-  <div class="state" id="expired"><div class="big warn">&#8635;</div><div><b>Code expired</b></div>
-   <button id="again" type="button">Show a new code</button></div>
+  <div class="qr"><img src="/qr?{{.Stamp}}" alt="{{index .S "pair.qrAlt"}}" data-k-alt="pair.qrAlt" width="256" height="256"></div>
+  <div class="timer" id="timer">{{index .S "pair.expires"}}</div>
+  <div class="state" id="paired"><div class="big ok">&#10003;</div><div><b data-k="pair.paired">{{index .S "pair.paired"}}</b></div>
+   <div class="note" data-k="pair.close">{{index .S "pair.close"}}</div></div>
+  <div class="state" id="expired"><div class="big warn">&#8635;</div><div><b data-k="pair.expired">{{index .S "pair.expired"}}</b></div>
+   <button id="again" type="button" data-k="pair.again">{{index .S "pair.again"}}</button></div>
  </section>
  <section>
-  <h1>Pair your phone</h1>
-  <p class="sub">Phone and PC must be on the same Wi-Fi.</p>
+  <h1 data-k="pair.h1">{{index .S "pair.h1"}}</h1>
+  <p class="sub" data-k="pair.sub">{{index .S "pair.sub"}}</p>
   <ol>
-   <li><b>Scan the code</b> with your Android phone's camera and open the link in Chrome.</li>
-   <li>The first time, Chrome warns that the connection is not private. Tap <b>Advanced</b> &rarr; <b>Proceed</b>.
-     <span class="note">This is expected until step 3.</span></li>
-   <li><b>Install the CopyApp certificate</b> (once): first check that the code the app shows matches the
-     certificate code below. Then in the app tap <b>Install certificate</b>, and open
-     Settings &rarr; Security &amp; privacy &rarr; More security settings &rarr; Encryption &amp; credentials &rarr;
-     Install a certificate &rarr; <b>CA certificate</b>, and pick <code>copyapp-ca.crt</code>.
-     <span class="note">Menu names vary slightly between phone brands.</span></li>
-   <li>Reopen the app in Chrome and choose <b>Add to Home screen</b> / <b>Install app</b>. CopyApp then appears in the share sheet.</li>
+   <li data-k="pair.s1">{{index .S "pair.s1"}}</li>
+   <li><span data-k="pair.s2">{{index .S "pair.s2"}}</span>
+     <span class="note" data-k="pair.s2note">{{index .S "pair.s2note"}}</span></li>
+   <li><span data-k="pair.s3">{{index .S "pair.s3"}}</span>
+     <span class="note" data-k="pair.s3note">{{index .S "pair.s3note"}}</span></li>
+   <li data-k="pair.s4">{{index .S "pair.s4"}}</li>
   </ol>
   <div class="fpbox">
-   <div class="fplabel">Certificate code</div>
-   <div class="fpshort">{{.Short}}</div>
-   <div class="note">The CopyApp app on your phone shows the same code next to <b>Download certificate</b>.
-    <b>Check these match before installing.</b> If they differ, don't install: someone else may be on your Wi-Fi.</div>
+   <div class="fplabel" data-k="pair.fpLabel">{{index .S "pair.fpLabel"}}</div>
+   <div class="fpshort"><bdi dir="ltr">{{.Short}}</bdi></div>
+   <div class="note" data-k="pair.fpNote">{{index .S "pair.fpNote"}}</div>
   </div>
-  <div class="fp">Full SHA-256 fingerprint (Android shows it under Settings &rarr; Trusted credentials &rarr; User):<br>{{.Fingerprint}}</div>
+  <div class="fp"><span data-k="pair.fpFull">{{index .S "pair.fpFull"}}</span><br><bdi dir="ltr">{{.Fingerprint}}</bdi></div>
  </section>
 </main>
+<script type="application/json" id="strings" nonce="{{.Nonce}}">{{.Dict}}</script>
 <script nonce="{{.Nonce}}">
 (function(){
- var left=document.getElementById('left'), b=document.body;
+ var b=document.body, root=document.documentElement, secs={{.State.SecondsLeft}};
+ var dict=JSON.parse(document.getElementById('strings').textContent), lang=root.lang;
+ function get(k){return (dict[lang]||{})[k]||dict.en[k]||k}
+ function timer(){
+  var t=document.getElementById('timer'), parts=get('pair.expires').split('{s}'), n=document.createElement('b');
+  n.id='left'; n.textContent=secs;
+  t.replaceChildren(parts[0], n, parts[1]||'');
+ }
+ function apply(l){
+  if(!dict[l]) return;
+  lang=l; root.lang=l; root.dir=l==='he'?'rtl':'ltr';
+  document.title=get('pair.htmlTitle');
+  document.querySelectorAll('[data-k]').forEach(function(e){e.innerHTML=get(e.dataset.k)});
+  document.querySelectorAll('[data-k-alt]').forEach(function(e){e.alt=get(e.dataset.kAlt)});
+  document.getElementById('langs').setAttribute('aria-label',get('pair.lang'));
+  document.querySelectorAll('[data-lang]').forEach(function(e){e.setAttribute('aria-pressed',String(e.dataset.lang===l))});
+  timer();
+ }
+ var saved=null; try{saved=localStorage.getItem('copyapp.lang')}catch(e){}
+ apply(saved&&dict[saved]?saved:lang);
+ document.getElementById('langs').addEventListener('click',function(e){
+  var btn=e.target.closest('[data-lang]'); if(!btn) return;
+  apply(btn.dataset.lang); try{localStorage.setItem('copyapp.lang',lang)}catch(e){}
+ });
  function set(st){
   b.className = st.paired ? 'paired' : (st.open ? '' : 'expired');
-  left.textContent = Math.max(0, st.secondsLeft|0);
+  secs = Math.max(0, st.secondsLeft|0);
+  var left=document.getElementById('left'); if(left) left.textContent=secs;
  }
  function poll(){
   fetch('/pairing/status',{cache:'no-store'}).then(function(r){return r.json()}).then(function(st){

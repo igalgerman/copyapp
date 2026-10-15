@@ -1,21 +1,23 @@
 <!doctype html>
-<html lang="en">
+<html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#E9EDF6" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#10152A" media="(prefers-color-scheme: dark)">
-<meta name="description" content="Send your clipboard, photos and files between this phone and your PC.">
+<meta name="description" content="העברת הלוח, תמונות וקבצים בין הטלפון למחשב.">
 <title>CopyApp</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="preload" href="/bricolage.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/style.css">
+<script src="/i18n.js" defer></script>
 <script src="/app.js" defer></script>
 </head>
 <body data-view="loading">
+<!-- Visible text comes from i18n.js: data-i18n (text), data-i18n-html (markup), data-i18n-attr (attributes). -->
 
 <svg class="sprite" aria-hidden="true" focusable="false">
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></symbol>
@@ -36,14 +38,19 @@
 </svg>
 
 <!-- Loading -->
-<section class="view view-loading" aria-label="Loading">
+<section class="view view-loading" data-i18n-attr="aria-label:loading">
   <img class="loading-mark" src="/icon.svg" alt="" width="72" height="72">
 </section>
 
 <!-- Not paired -->
 <section class="view view-pair" aria-labelledby="pair-title">
   <header class="pair-top">
-    <span class="brand"><img src="/icon.svg" alt="" width="28" height="28"> CopyApp</span>
+    <span class="brand" dir="ltr"><img src="/icon.svg" alt="" width="28" height="28"> CopyApp</span>
+    <div class="lang-switch" role="group" data-i18n-attr="aria-label:lang.label">
+      <button type="button" data-lang="he" lang="he" aria-label="עברית" aria-pressed="true">עב</button>
+      <button type="button" data-lang="ru" lang="ru" aria-label="Русский" aria-pressed="false">РУ</button>
+      <button type="button" data-lang="en" lang="en" aria-label="English" aria-pressed="false">EN</button>
+    </div>
   </header>
 
   <div class="pair-hero" aria-hidden="true">
@@ -54,29 +61,34 @@
     <div class="pair-phone"><span class="pair-finder"></span></div>
   </div>
 
-  <h1 id="pair-title" class="pair-title">Scan the code on your PC</h1>
-  <p class="pair-lead" id="pair-lead">This phone isn’t connected to a PC yet. It takes one scan.</p>
+  <h1 id="pair-title" class="pair-title" data-i18n="pair.title"></h1>
+  <p class="pair-lead" id="pair-lead" data-i18n="pair.lead"></p>
 
   <ol class="pair-steps">
-    <li><span class="step-n">1</span><p>On your PC, click the <b>CopyApp</b> icon next to the clock and choose <b>Pair phone</b>.</p></li>
-    <li><span class="step-n">2</span><p>Open this phone’s <b>camera</b> and point it at the QR code.</p></li>
-    <li><span class="step-n">3</span><p>Tap the link that pops up. You’ll land back here, connected.</p></li>
+    <li><span class="step-n">1</span><p data-i18n-html="pair.s1"></p></li>
+    <li><span class="step-n">2</span><p data-i18n-html="pair.s2"></p></li>
+    <li><span class="step-n">3</span><p data-i18n-html="pair.s3"></p></li>
   </ol>
 
   <button class="cert-teaser" type="button" data-open="sheet-cert">
     <svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg>
-    <span><b>Seeing “Not secure”?</b><br>Fix it once with the CopyApp certificate.</span>
+    <span><b data-i18n="pair.certB"></b><br><span data-i18n="pair.certSub"></span></span>
   </button>
 </section>
 
 <!-- Connected -->
 <section class="view view-main" aria-label="CopyApp">
   <header class="topbar">
-    <span class="brand"><img src="/icon.svg" alt="" width="28" height="28"> CopyApp</span>
+    <span class="brand" dir="ltr"><img src="/icon.svg" alt="" width="28" height="28"><span class="brand-name">CopyApp</span></span>
     <span class="conn" id="conn" data-state="connecting">
-      <span class="conn-dot" aria-hidden="true"></span><span class="conn-label" id="conn-label">Connecting</span>
+      <span class="conn-dot" aria-hidden="true"></span><span class="conn-label" id="conn-label" data-i18n="conn.connecting"></span>
     </span>
-    <button class="icon-btn" type="button" data-open="sheet-settings" aria-label="Settings">
+    <div class="lang-switch" role="group" data-i18n-attr="aria-label:lang.label">
+      <button type="button" data-lang="he" lang="he" aria-label="עברית" aria-pressed="true">עב</button>
+      <button type="button" data-lang="ru" lang="ru" aria-label="Русский" aria-pressed="false">РУ</button>
+      <button type="button" data-lang="en" lang="en" aria-label="English" aria-pressed="false">EN</button>
+    </div>
+    <button class="icon-btn" type="button" data-open="sheet-settings" data-i18n-attr="aria-label:settings.aria">
       <svg class="ic" aria-hidden="true"><use href="#i-more"/></svg>
     </button>
   </header>
@@ -84,21 +96,21 @@
   <div class="banner" id="banner" role="status" hidden>
     <svg class="ic" aria-hidden="true"><use href="#i-retry"/></svg>
     <div class="banner-text">
-      <b id="banner-title">Can’t reach your PC</b>
-      <span id="banner-sub">Trying again…</span>
+      <b id="banner-title" data-i18n="banner.title"></b>
+      <span id="banner-sub" data-i18n="banner.now"></span>
     </div>
-    <button type="button" class="banner-btn" id="banner-retry">Retry now</button>
+    <button type="button" class="banner-btn" id="banner-retry" data-i18n="banner.retry"></button>
   </div>
 
   <main class="feed-wrap" id="feed-wrap">
     <div class="setup-card" id="setup-card" hidden>
       <svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg>
       <div>
-        <b>Finish setup in a minute</b>
-        <p>Install the CopyApp certificate to remove the “Not secure” warning and add CopyApp to your home screen.</p>
+        <b data-i18n="setup.title"></b>
+        <p data-i18n="setup.text"></p>
         <div class="setup-actions">
-          <button type="button" class="btn btn-primary" data-open="sheet-cert">Show me how</button>
-          <button type="button" class="btn btn-ghost" id="setup-dismiss">Not now</button>
+          <button type="button" class="btn btn-primary" data-open="sheet-cert" data-i18n="setup.how"></button>
+          <button type="button" class="btn btn-ghost" id="setup-dismiss" data-i18n="setup.later"></button>
         </div>
       </div>
     </div>
@@ -116,33 +128,33 @@
           <rect class="ea-chip ea-chip-b" x="34" y="54" width="28" height="8" rx="4"/>
         </svg>
       </div>
-      <h2 class="empty-title">Ready when you are</h2>
-      <p class="empty-text">Copy something on your PC and press <kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>C</kbd>. It shows up here.</p>
-      <p class="empty-text">Going the other way? Copy on this phone, then tap <b>Send clipboard</b>.</p>
+      <h2 class="empty-title" data-i18n="empty.title"></h2>
+      <p class="empty-text" data-i18n-html="empty.t1"></p>
+      <p class="empty-text" data-i18n-html="empty.t2"></p>
     </div>
 
-    <ol class="feed" id="feed" aria-label="Transfers" aria-live="polite"></ol>
+    <ol class="feed" id="feed" data-i18n-attr="aria-label:feed.aria" aria-live="polite"></ol>
   </main>
 
   <footer class="dock">
     <button class="send-clip" type="button" id="send-clip">
       <span class="send-clip-icon" aria-hidden="true"><svg class="ic"><use href="#i-up"/></svg></span>
       <span class="send-clip-text">
-        <span class="send-clip-label">Send clipboard</span>
-        <span class="send-clip-sub">Puts what you copied on your PC</span>
+        <span class="send-clip-label" data-i18n="dock.send"></span>
+        <span class="send-clip-sub" data-i18n="dock.sendSub"></span>
       </span>
     </button>
     <div class="dock-row">
       <label class="dock-btn">
         <input type="file" id="pick-photo" accept="image/*,video/*" multiple class="vh">
-        <svg class="ic" aria-hidden="true"><use href="#i-photo"/></svg><span>Photo</span>
+        <svg class="ic" aria-hidden="true"><use href="#i-photo"/></svg><span data-i18n="dock.photo"></span>
       </label>
       <label class="dock-btn">
         <input type="file" id="pick-file" multiple class="vh">
-        <svg class="ic" aria-hidden="true"><use href="#i-file"/></svg><span>File</span>
+        <svg class="ic" aria-hidden="true"><use href="#i-file"/></svg><span data-i18n="dock.file"></span>
       </label>
       <button class="dock-btn" type="button" data-open="sheet-paste">
-        <svg class="ic" aria-hidden="true"><use href="#i-keyboard"/></svg><span>Type</span>
+        <svg class="ic" aria-hidden="true"><use href="#i-keyboard"/></svg><span data-i18n="dock.type"></span>
       </button>
     </div>
   </footer>
@@ -151,79 +163,80 @@
 <!-- Sheets -->
 <dialog class="sheet" id="sheet-settings" aria-labelledby="settings-title">
   <div class="sheet-grip" aria-hidden="true"></div>
-  <h2 class="sheet-title" id="settings-title">Connected to your PC</h2>
-  <p class="sheet-text">To check it’s really your PC, compare this <b>certificate code</b> with the one in the PC’s Pair phone window.</p>
+  <h2 class="sheet-title" id="settings-title" data-i18n="settings.title"></h2>
+  <p class="sheet-text" data-i18n-html="settings.text"></p>
   <div class="fp-check">
-    <span class="fp-label">Certificate code</span>
-    <p class="fp-short" data-fp-short aria-label="Certificate code">…</p>
+    <span class="fp-label" data-i18n="fp.label"></span>
+    <p class="fp-short" data-i18n-attr="aria-label:fp.label"><bdi dir="ltr" data-fp-short>…</bdi></p>
   </div>
-  <p class="fingerprint" id="fingerprint" aria-label="Full certificate fingerprint">…</p>
+  <p class="fingerprint" data-i18n-attr="aria-label:fp.full"><bdi dir="ltr" id="fingerprint">…</bdi></p>
   <div class="sheet-list">
     <button type="button" class="sheet-item" data-open="sheet-cert">
       <svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg>
-      <span><b>Remove “Not secure” warning</b><small>Install the CopyApp certificate</small></span>
+      <span><b data-i18n="settings.cert"></b><small data-i18n="settings.certSub"></small></span>
     </button>
     <button type="button" class="sheet-item sheet-item-danger" id="unpair-btn">
       <svg class="ic" aria-hidden="true"><use href="#i-unlink"/></svg>
-      <span><b>Unpair this phone</b><small>You’ll need to scan the QR code again</small></span>
+      <span><b data-i18n="settings.unpair"></b><small data-i18n="settings.unpairSub"></small></span>
     </button>
   </div>
-  <button type="button" class="btn btn-quiet btn-block" data-close>Done</button>
+  <button type="button" class="btn btn-quiet btn-block" data-close data-i18n="done"></button>
 </dialog>
 
 <dialog class="sheet" id="sheet-cert" aria-labelledby="cert-title">
   <div class="sheet-grip" aria-hidden="true"></div>
-  <h2 class="sheet-title" id="cert-title">Remove the “Not secure” warning</h2>
-  <p class="sheet-text">One-time setup. Your phone will trust this PC, and you can add CopyApp to your home screen.</p>
+  <h2 class="sheet-title" id="cert-title" data-i18n="cert.title"></h2>
+  <p class="sheet-text" data-i18n="cert.text"></p>
   <div class="fp-check">
-    <span class="fp-label">Certificate code</span>
-    <p class="fp-short" data-fp-short aria-label="Certificate code">…</p>
-    <p class="fp-note">Check these match the code in your PC’s <b>Pair phone</b> window before installing. If they don’t, don’t install it.</p>
+    <span class="fp-label" data-i18n="fp.label"></span>
+    <p class="fp-short" data-i18n-attr="aria-label:fp.label"><bdi dir="ltr" data-fp-short>…</bdi></p>
+    <p class="fp-note" data-i18n-html="cert.note"></p>
   </div>
   <a class="btn btn-primary btn-block" id="cert-download" href="/ca.crt" download="copyapp-ca.crt">
-    <svg class="ic" aria-hidden="true"><use href="#i-download"/></svg> Download certificate
+    <svg class="ic" aria-hidden="true"><use href="#i-download"/></svg> <span data-i18n="cert.download"></span>
   </a>
-  <p class="sheet-hint" id="cert-hint">If the download fails, choose <b>Pair phone</b> on your PC first, then try again.</p>
+  <p class="sheet-hint" id="cert-hint" data-i18n-html="cert.hint"></p>
   <ol class="cert-steps">
     <li>
       <div class="mock" aria-hidden="true">
-        <span class="mock-row">Network</span><span class="mock-row mock-hit">Security &amp; privacy</span><span class="mock-row">Apps</span>
+        <span class="mock-row" data-i18n="cert.m1a"></span><span class="mock-row mock-hit" data-i18n="cert.m1b"></span><span class="mock-row" data-i18n="cert.m1c"></span>
       </div>
-      <p><span class="step-n">1</span>Open <b>Settings</b> › <b>Security</b>.</p>
+      <p><span class="step-n">1</span><span data-i18n-html="cert.s1"></span></p>
     </li>
     <li>
       <div class="mock" aria-hidden="true">
-        <span class="mock-row">Screen lock</span><span class="mock-row mock-hit">Install a certificate</span><span class="mock-row">Device admin</span>
+        <span class="mock-row" data-i18n="cert.m2a"></span><span class="mock-row mock-hit" data-i18n="cert.m2b"></span><span class="mock-row" data-i18n="cert.m2c"></span>
       </div>
-      <p><span class="step-n">2</span>Tap <b>Install a certificate</b>. Use the search in Settings if you can’t find it.</p>
+      <p><span class="step-n">2</span><span data-i18n-html="cert.s2"></span></p>
     </li>
     <li>
       <div class="mock" aria-hidden="true">
-        <span class="mock-row mock-hit">CA certificate</span><span class="mock-row">VPN &amp; app user</span><span class="mock-row">Wi‑Fi</span>
+        <span class="mock-row mock-hit" data-i18n="cert.m3a"></span><span class="mock-row" data-i18n="cert.m3b"></span><span class="mock-row"><bdi>Wi‑Fi</bdi></span>
       </div>
-      <p><span class="step-n">3</span>Choose <b>CA certificate</b>, then <b>Install anyway</b>.</p>
+      <p><span class="step-n">3</span><span data-i18n-html="cert.s3"></span></p>
     </li>
     <li>
       <div class="mock" aria-hidden="true">
-        <span class="mock-row mock-dim">Downloads</span><span class="mock-row mock-file">copyapp-ca.crt</span><span class="mock-row">IMG_2031.jpg</span>
+        <span class="mock-row mock-dim" data-i18n="cert.m4a"></span><span class="mock-row mock-file"><bdi>copyapp-ca.crt</bdi></span><span class="mock-row"><bdi>IMG_2031.jpg</bdi></span>
       </div>
-      <p><span class="step-n">4</span>Pick <b>copyapp-ca.crt</b> from Downloads. Done.</p>
+      <p><span class="step-n">4</span><span data-i18n-html="cert.s4"></span></p>
     </li>
   </ol>
-  <button type="button" class="btn btn-quiet btn-block" data-close>Close</button>
+  <p class="sheet-hint" data-i18n="cert.vary"></p>
+  <button type="button" class="btn btn-quiet btn-block" data-close data-i18n="close"></button>
 </dialog>
 
 <dialog class="sheet" id="sheet-paste" aria-labelledby="paste-title">
   <div class="sheet-grip" aria-hidden="true"></div>
-  <h2 class="sheet-title" id="paste-title">Send text to your PC</h2>
-  <p class="sheet-text" id="paste-sub">Type or paste below. It goes straight to your PC’s clipboard.</p>
+  <h2 class="sheet-title" id="paste-title" data-i18n="paste.title"></h2>
+  <p class="sheet-text" id="paste-sub" data-i18n="paste.sub"></p>
   <form id="paste-form" class="paste-form">
-    <label for="paste-text" class="vh">Text to send</label>
-    <textarea id="paste-text" rows="5" placeholder="Long-press here and choose Paste" autocomplete="off"></textarea>
+    <label for="paste-text" class="vh" data-i18n="paste.label"></label>
+    <textarea id="paste-text" rows="5" dir="auto" data-i18n-attr="placeholder:paste.ph" autocomplete="off"></textarea>
     <div class="paste-actions">
-      <button type="button" class="btn btn-quiet" data-close>Cancel</button>
+      <button type="button" class="btn btn-quiet" data-close data-i18n="cancel"></button>
       <button type="submit" class="btn btn-primary">
-        <svg class="ic" aria-hidden="true"><use href="#i-up"/></svg> Send to PC
+        <svg class="ic" aria-hidden="true"><use href="#i-up"/></svg> <span data-i18n="paste.send"></span>
       </button>
     </div>
   </form>
@@ -231,11 +244,11 @@
 
 <dialog class="sheet" id="sheet-confirm" aria-labelledby="confirm-title">
   <div class="sheet-grip" aria-hidden="true"></div>
-  <h2 class="sheet-title" id="confirm-title">Unpair this phone?</h2>
-  <p class="sheet-text">Things stop syncing until you scan the QR code on your PC again.</p>
+  <h2 class="sheet-title" id="confirm-title" data-i18n="confirm.title"></h2>
+  <p class="sheet-text" data-i18n="confirm.text"></p>
   <div class="paste-actions">
-    <button type="button" class="btn btn-quiet" data-close>Keep paired</button>
-    <button type="button" class="btn btn-danger" id="confirm-unpair">Unpair</button>
+    <button type="button" class="btn btn-quiet" data-close data-i18n="confirm.keep"></button>
+    <button type="button" class="btn btn-danger" id="confirm-unpair" data-i18n="confirm.unpair"></button>
   </div>
 </dialog>
 
@@ -244,13 +257,13 @@
 
 <template id="tpl-in">
   <li class="msg msg-in">
-    <div class="msg-meta"><svg class="ic" aria-hidden="true"><use href="#i-pc"/></svg><span class="msg-from">From PC</span><time class="msg-time"></time></div>
+    <div class="msg-meta"><svg class="ic" aria-hidden="true"><use href="#i-pc"/></svg><span class="msg-from" data-i18n="msg.from"></span><time class="msg-time"></time></div>
     <div class="card"></div>
   </li>
 </template>
 <template id="tpl-out">
   <li class="msg msg-out">
-    <div class="msg-meta"><span class="msg-from">To PC</span><time class="msg-time"></time></div>
+    <div class="msg-meta"><span class="msg-from" data-i18n="msg.to"></span><time class="msg-time"></time></div>
     <div class="card"></div>
   </li>
 </template>

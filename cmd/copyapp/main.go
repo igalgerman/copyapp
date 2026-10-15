@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/igalgerman/copyapp/internal/auth"
+	"github.com/igalgerman/copyapp/internal/i18n"
 	"github.com/igalgerman/copyapp/internal/pc"
 	"github.com/igalgerman/copyapp/internal/secret"
 	"github.com/igalgerman/copyapp/internal/server"
@@ -64,6 +65,8 @@ func main() {
 	if lf, err := os.OpenFile(filepath.Join(dataDir, "copyapp.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err == nil {
 		log.SetOutput(lf)
 	}
+
+	i18n.Load(dataDir)
 
 	var fileArg string
 	if len(os.Args) > 1 {
@@ -248,16 +251,16 @@ func sendFile(path string) {
 	name := filepath.Base(path)
 	fi, err := os.Stat(path)
 	if err != nil || fi.IsDir() {
-		machine.Notify("Not sent", "Can't send "+name)
+		machine.Notify(i18n.T("toast.notSent"), i18n.T("toast.cantSend", name))
 		return
 	}
 	if fi.Size() > store.MaxItemSize {
-		machine.Notify("Not sent", name+" is larger than 200 MB")
+		machine.Notify(i18n.T("toast.notSent"), i18n.T("toast.tooLarge", name))
 		return
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		machine.Notify("Not sent", "Can't read "+name)
+		machine.Notify(i18n.T("toast.notSent"), i18n.T("toast.cantRead", name))
 		return
 	}
 	mt := mime.TypeByExtension(strings.ToLower(filepath.Ext(name)))
@@ -265,33 +268,33 @@ func sendFile(path string) {
 		mt = "application/octet-stream"
 	}
 	if _, err := srv.Publish(store.Item{Kind: "file", Name: name, Mime: mt, Data: data}); err != nil {
-		machine.Notify("Not sent", publishErrText(err))
+		machine.Notify(i18n.T("toast.notSent"), publishErrText(err))
 		return
 	}
-	machine.Notify("Sent to phone", name)
+	machine.Notify(i18n.T("toast.sent"), name)
 }
 
 func sendClipboard() {
 	if machine.Sensitive() {
-		machine.Notify("Not sent", "Clipboard looks like a secret; skipped")
+		machine.Notify(i18n.T("toast.notSent"), i18n.T("toast.secret"))
 		return
 	}
 	var it store.Item
-	what := "Text"
+	what := i18n.T("toast.clipText")
 	if img := machine.ReadImagePNG(); len(img) > 0 {
 		it = store.Item{Kind: "image", Name: "clipboard.png", Mime: "image/png", Data: img}
-		what = "Image"
+		what = i18n.T("toast.clipImage")
 	} else if t := machine.ReadText(); t != "" {
 		it = store.Item{Kind: "text", Name: "clipboard.txt", Mime: "text/plain; charset=utf-8", Data: []byte(t)}
 	} else {
-		machine.Notify("Nothing to send", "The clipboard is empty")
+		machine.Notify(i18n.T("toast.nothing"), i18n.T("toast.clipEmpty"))
 		return
 	}
 	if _, err := srv.Publish(it); err != nil {
-		machine.Notify("Not sent", publishErrText(err))
+		machine.Notify(i18n.T("toast.notSent"), publishErrText(err))
 		return
 	}
-	machine.Notify("Sent to phone", what+" from clipboard")
+	machine.Notify(i18n.T("toast.sent"), what)
 }
 
 func hotkeyLoop() {
@@ -313,15 +316,46 @@ func startPairing() {
 func onReady() {
 	systray.SetIcon(makeICO())
 	systray.SetTitle("CopyApp")
-	systray.SetTooltip("CopyApp - Ctrl+Alt+C sends the clipboard to your phone")
-	mPair := systray.AddMenuItem("Pair phone…", "Show the QR code")
-	mSend := systray.AddMenuItem("Send clipboard to phone", "Ctrl+Alt+C")
-	mOpen := systray.AddMenuItem("Open received folder", "")
+	mPair := systray.AddMenuItem("", "")
+	mSend := systray.AddMenuItem("", "Ctrl+Alt+C")
+	mOpen := systray.AddMenuItem("", "")
 	systray.AddSeparator()
-	mAuto := systray.AddMenuItemCheckbox("Start with Windows", "", pc.AutostartEnabled())
-	mRepair := systray.AddMenuItem("Re-pair phone", "Forget the current phone")
+	mAuto := systray.AddMenuItemCheckbox("", "", pc.AutostartEnabled())
+	mRepair := systray.AddMenuItem("", "")
+	mLang := systray.AddMenuItem(i18n.T("tray.lang"), "")
+	langNames := map[string]string{"he": "עברית", "ru": "Русский", "en": "English"}
+	langItems := map[string]*systray.MenuItem{}
+	langClicked := make(chan string)
+	for _, l := range i18n.Langs {
+		it := mLang.AddSubMenuItemCheckbox(langNames[l], "", l == i18n.Lang())
+		langItems[l] = it
+		go func() {
+			for range it.ClickedCh {
+				langClicked <- l
+			}
+		}()
+	}
 	systray.AddSeparator()
-	mQuit := systray.AddMenuItem("Quit", "")
+	mQuit := systray.AddMenuItem("", "")
+	relabel := func() {
+		systray.SetTooltip(i18n.T("tray.tooltip"))
+		mPair.SetTitle(i18n.T("tray.pair"))
+		mPair.SetTooltip(i18n.T("tray.pairTip"))
+		mSend.SetTitle(i18n.T("tray.send"))
+		mOpen.SetTitle(i18n.T("tray.open"))
+		mAuto.SetTitle(i18n.T("tray.autostart"))
+		mRepair.SetTitle(i18n.T("tray.repair"))
+		mRepair.SetTooltip(i18n.T("tray.repairTip"))
+		mQuit.SetTitle(i18n.T("tray.quit"))
+		for l, it := range langItems { // radio-like: exactly one checked
+			if l == i18n.Lang() {
+				it.Check()
+			} else {
+				it.Uncheck()
+			}
+		}
+	}
+	relabel()
 
 	if firstRun || !sess.Paired() {
 		go startPairing()
@@ -329,6 +363,12 @@ func onReady() {
 	go func() {
 		for {
 			select {
+			case l := <-langClicked:
+				i18n.Set(l)
+				if err := i18n.Save(dataDir); err != nil {
+					log.Printf("save language: %v", err)
+				}
+				relabel()
 			case <-mPair.ClickedCh:
 				startPairing()
 			case <-mSend.ClickedCh:
@@ -377,7 +417,7 @@ func createSendToShortcut() {
 
 func publishErrText(err error) string {
 	if errors.Is(err, store.ErrOutboxFull) {
-		return "400 MB is already waiting for the phone; try again in a few minutes"
+		return i18n.T("toast.outboxFull")
 	}
 	return err.Error()
 }

@@ -1,12 +1,13 @@
 // CopyApp service worker: caches the app shell and receives Android shares.
 // It never touches /events, /item/*, /send, /status, /pair, /ca.crt or /unpair:
 // those requests go straight to the network (no respondWith).
-const CACHE = 'copyapp-shell-v1';
+const CACHE = 'copyapp-shell-v2'; // bump when the shell changes (v2: i18n)
 // Shared items wait here until the page sends them (see app.js sendShared).
 const SHARE_CACHE = 'copyapp-share-v1';
 const SHELL = [
   '/',
   '/index.html',
+  '/i18n.js',
   '/app.js',
   '/style.css',
   '/manifest.json',

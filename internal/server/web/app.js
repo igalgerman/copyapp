@@ -1,9 +1,10 @@
-// CopyApp phone UI. Vanilla JS, no build step.
+// CopyApp phone UI. Vanilla JS, no build step. Strings live in i18n.js.
 (() => {
   'use strict';
 
   const MAX_BYTES = 200 * 1024 * 1024;
   const EXPIRY_MS = 10 * 60 * 1000;
+  const T = I18N.t;
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const body = document.body;
@@ -12,7 +13,6 @@
   const conn = $('#conn');
   const connLabel = $('#conn-label');
   const banner = $('#banner');
-  const bannerTitle = $('#banner-title');
   const bannerSub = $('#banner-sub');
   const sendBtn = $('#send-clip');
   const toasts = $('#toasts');
@@ -27,12 +27,25 @@
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
   // ---------- small helpers ----------
+  // A message is [key, vars?]. Nodes made from one keep the key in
+  // data-i18n, so a language switch re-renders them in place.
+  function setMsg(n, m) {
+    n.dataset.i18n = m[0];
+    if (m[1]) n.dataset.i18nVars = JSON.stringify(m[1]); else delete n.dataset.i18nVars;
+    n.textContent = T(m[0], m[1]);
+  }
   function el(tag, attrs = {}, ...kids) {
     const n = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs)) {
       if (v == null || v === false) continue;
       if (k === 'class') n.className = v;
       else if (k === 'text') n.textContent = v;
+      else if (k === 'msg') setMsg(n, v);
+      else if (k === 'attrMsg') { // {attr: [key, vars]}
+        const pairs = [];
+        for (const [a, m] of Object.entries(v)) { pairs.push(a + ':' + m[0]); n.setAttribute(a, T(m[0], m[1])); if (m[1]) n.dataset.i18nVars = JSON.stringify(m[1]); }
+        n.dataset.i18nAttr = pairs.join(';');
+      }
       else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
       else n.setAttribute(k, v === true ? '' : v);
     }
@@ -48,19 +61,8 @@
     svg.append(use);
     return svg;
   }
-  function fmtSize(n) {
-    if (n < 1024) return n + ' B';
-    if (n < 1024 * 1024) return Math.max(1, Math.round(n / 1024)) + ' KB';
-    if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 ? 1 : 0) + ' MB';
-    return (n / 1024 / 1024 / 1024).toFixed(1) + ' GB';
-  }
-  function relTime(t) {
-    const s = Math.round((Date.now() - t) / 1000);
-    if (s < 45) return 'just now';
-    const m = Math.round(s / 60);
-    if (m < 60) return m + ' min ago';
-    return new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  }
+  const fmtSize = (n) => I18N.size(n);
+  const relTime = (t) => I18N.relTime(t);
   function extOf(name, mime) {
     const m = /\.([a-z0-9]{1,5})$/i.exec(name || '');
     if (m) return m[1].toUpperCase();
@@ -74,10 +76,11 @@
   }
 
   // ---------- toasts ----------
+  // title/detail are messages ([key, vars]).
   function toast(kind, title, detail, ms) {
     const t = el('button', { type: 'button', class: 'toast toast-' + kind },
       icon(kind === 'ok' ? 'check' : 'alert'),
-      el('div', {}, el('b', { text: title }), detail ? el('span', { text: detail }) : null));
+      el('div', {}, el('b', { msg: title }), detail ? el('span', { msg: detail }) : null));
     const remove = () => {
       if (!t.isConnected) return;
       t.classList.add('is-leaving');
@@ -91,28 +94,17 @@
       try { if (toasts.matches(':popover-open')) toasts.hidePopover(); toasts.showPopover(); } catch { /* old browser */ }
     }
     // Screen readers: polite for success, assertive for errors.
-    if (kind === 'err') { alerts.textContent = ''; setTimeout(() => { alerts.textContent = title + '. ' + (detail || ''); }, 50); }
+    if (kind === 'err') { alerts.textContent = ''; setTimeout(() => { alerts.textContent = T(...title) + '. ' + (detail ? T(...detail) : ''); }, 50); }
     else { t.setAttribute('role', 'status'); }
     setTimeout(remove, ms || (kind === 'err' ? 6500 : 3800));
     if (kind === 'ok') buzz(18); else buzz([30, 60, 30]);
   }
 
-  const ERRORS = {
-    empty: ['Nothing to send', 'Your clipboard is empty. Copy something first.'],
-    not_png: ['Your PC couldn’t paste that image', 'Only PNG images can go to the clipboard. Send it with File instead.'],
-    too_large: ['That’s too big', 'The limit is 200 MB per transfer. Try a smaller file.'],
-    too_many_pixels: ['That image is too big to paste', 'Images over 50 megapixels can’t go to the clipboard. Send it with File instead.'],
-    unauthorized: ['This phone isn’t paired anymore', 'Scan the QR code on your PC to connect again.'],
-    unsupported: ['Your PC didn’t accept that', 'Try sending it as a file instead.'],
-    bad_request: ['Your PC couldn’t read that', 'Try sending it again.'],
-    bad_text: ['That text can’t be sent', 'It contains characters your PC can’t use.'],
-    clipboard: ['Your PC’s clipboard is busy', 'Another app is using it. Try again in a moment.'],
-    save: ['Your PC couldn’t save the file', 'Check that the PC has enough free space.'],
-    network: ['Can’t reach your PC', 'Make sure both are on the same Wi‑Fi and CopyApp is running.'],
-    share: ['Sharing didn’t work', 'Try sharing again, or open CopyApp and pick the file.'],
-    copy: ['Couldn’t copy on this phone', 'Your browser blocked the clipboard. Try again, or long-press to copy.'],
-  };
-  function errorText(code) { return ERRORS[code] || ERRORS.bad_request; }
+  // Server and local error codes -> [title, detail] messages (err.<code>.t/.d in i18n.js).
+  function errorText(code) {
+    const c = I18N.has('err.' + code + '.t') ? code : 'bad_request';
+    return [['err.' + c + '.t'], ['err.' + c + '.d']];
+  }
 
   // ---------- views ----------
   function setView(v) {
@@ -154,7 +146,7 @@
 
   function setConn(state) {
     conn.dataset.state = state;
-    connLabel.textContent = state === 'online' ? 'Connected' : state === 'offline' ? 'Offline' : 'Connecting';
+    setMsg(connLabel, [state === 'online' ? 'conn.online' : state === 'offline' ? 'conn.offline' : 'conn.connecting']);
   }
 
   // ---------- feed ----------
@@ -182,8 +174,11 @@
     time.textContent = relTime(t);
     time.dataset.t = t;
   }
-  setInterval(() => {
+  function refreshTimes() {
     for (const time of feed.querySelectorAll('.msg-time')) time.textContent = relTime(+time.dataset.t);
+  }
+  setInterval(() => {
+    refreshTimes();
     for (const { item, node } of received.values()) markExpired(item, node);
   }, 20000);
 
@@ -198,7 +193,7 @@
       b.tabIndex = -1;
       if (b.tagName === 'A') b.removeAttribute('href');
     }
-    card.append(el('p', { class: 'expired-note', text: 'Expired. Send it again from your PC.' }));
+    card.append(el('p', { class: 'expired-note', msg: ['item.expired'] }));
   }
 
   function addReceived(item) {
@@ -208,42 +203,46 @@
     const node = $('#tpl-in').content.firstElementChild.cloneNode(true);
     const card = $('.card', node);
     const url = '/item/' + encodeURIComponent(item.id);
-    const label = item.kind === 'image' ? 'Image from PC' : item.kind === 'file' ? 'File from PC' : 'Text from PC';
-    node.setAttribute('aria-label', label);
+    const label = item.kind === 'image' ? 'item.image' : item.kind === 'file' ? 'item.file' : 'item.text';
+    node.setAttribute('aria-label', T(label));
+    node.dataset.i18nAttr = 'aria-label:' + label;
 
     if (item.kind === 'text') {
       const hasText = typeof item.text === 'string';
-      const txt = el('p', { class: 'card-text clamp', text: hasText ? item.text : 'Long text (' + fmtSize(item.size) + '). Tap Copy to get all of it.' });
+      // The PC's own text: dir="auto" lets Hebrew/Russian/English each read naturally.
+      const txt = hasText
+        ? el('p', { class: 'card-text clamp', dir: 'auto', text: item.text })
+        : el('p', { class: 'card-text clamp', msg: ['item.long', { size: fmtSize(item.size) }] });
       card.append(txt);
       if (hasText && (item.text.length > 220 || item.text.split('\n').length > 6)) {
-        const more = el('button', { type: 'button', class: 'more-btn', text: 'Show all', 'aria-expanded': 'false' });
+        const more = el('button', { type: 'button', class: 'more-btn', msg: ['item.showAll'], 'aria-expanded': 'false' });
         more.addEventListener('click', () => {
           const open = txt.classList.toggle('clamp');
-          more.textContent = open ? 'Show all' : 'Show less';
+          setMsg(more, [open ? 'item.showAll' : 'item.showLess']);
           more.setAttribute('aria-expanded', String(!open));
         });
         card.append(more);
       }
-      const copy = el('button', { type: 'button', class: 'btn btn-primary' }, icon('copy'), el('span', { text: 'Copy' }));
+      const copy = el('button', { type: 'button', class: 'btn btn-primary' }, icon('copy'), el('span', { msg: ['copy'] }));
       copy.addEventListener('click', () => copyText(item, copy));
       card.append(el('div', { class: 'card-actions' }, copy));
     } else if (item.kind === 'image') {
-      const img = el('img', { class: 'card-thumb', src: url, alt: item.name ? 'Image: ' + item.name : 'Image from your PC', loading: 'lazy', decoding: 'async' });
+      const img = el('img', { class: 'card-thumb', src: url, attrMsg: { alt: item.name ? ['item.imgAlt', { name: item.name }] : ['item.image'] }, loading: 'lazy', decoding: 'async' });
       img.addEventListener('load', () => { if (nearBottom()) scrollToEnd(false); }, { once: true });
       img.addEventListener('error', () => img.replaceWith(el('div', { class: 'thumb-missing' }, icon('photo'))), { once: true });
       card.append(img);
-      const copy = el('button', { type: 'button', class: 'btn btn-primary' }, icon('copy'), el('span', { text: 'Copy image' }));
+      const copy = el('button', { type: 'button', class: 'btn btn-primary' }, icon('copy'), el('span', { msg: ['copyImage'] }));
       copy.addEventListener('click', () => copyImage(item, copy));
-      const dl = el('a', { class: 'btn btn-quiet', href: url, download: item.name || 'image.png' }, icon('download'), el('span', { text: 'Save' }));
-      dl.addEventListener('click', () => toast('ok', 'Saving to your phone', 'Find it in Downloads.'));
+      const dl = el('a', { class: 'btn btn-quiet', href: url, download: item.name || 'image.png' }, icon('download'), el('span', { msg: ['save'] }));
+      dl.addEventListener('click', () => toast('ok', ['toast.saving'], ['toast.inDownloads']));
       card.append(el('div', { class: 'card-actions' }, copy, dl));
     } else {
-      const name = item.name || 'File';
+      const name = item.name || T('dock.file');
       card.append(el('div', { class: 'file-row' },
         el('span', { class: 'file-tile', 'aria-hidden': 'true', text: extOf(name, item.mime) }),
-        el('div', {}, el('div', { class: 'file-name', text: name }), el('div', { class: 'file-sub', text: fmtSize(item.size) }))));
-      const dl = el('a', { class: 'btn btn-primary', href: url, download: name }, icon('download'), el('span', { text: 'Download' }));
-      dl.addEventListener('click', () => toast('ok', 'Downloading ' + name, 'Find it in Downloads.'));
+        el('div', {}, el('div', { class: 'file-name' }, el('bdi', { text: name })), el('div', { class: 'file-sub', text: fmtSize(item.size), 'data-size': item.size }))));
+      const dl = el('a', { class: 'btn btn-primary', href: url, download: name }, icon('download'), el('span', { msg: ['download'] }));
+      dl.addEventListener('click', () => toast('ok', ['toast.downloading', { name }], ['toast.inDownloads']));
       card.append(el('div', { class: 'card-actions' }, dl));
     }
 
@@ -262,19 +261,19 @@
   }
 
   // ---------- copy (PC -> phone) ----------
-  function flashDone(btn, text) {
+  function flashDone(btn) {
     const label = $('span', btn);
-    const old = label.textContent;
+    const old = label.dataset.i18n;
     const use = $('use', btn);
     const oldIcon = use.getAttribute('href');
     btn.classList.add('is-done');
-    label.textContent = text;
+    setMsg(label, ['copied']);
     use.setAttribute('href', '#i-check');
     buzz(18);
     clearTimeout(btn._t);
     btn._t = setTimeout(() => {
       btn.classList.remove('is-done');
-      label.textContent = old;
+      setMsg(label, [old]);
       use.setAttribute('href', oldIcon);
     }, 2200);
   }
@@ -307,10 +306,10 @@
         const s = await (await fetchItem(item)).text();
         if (!legacyCopy(s)) throw new Error('copy');
       }
-      flashDone(btn, 'Copied');
+      flashDone(btn);
     } catch (e) {
       if (e && e.message === 'unauthorized') return;
-      if (e && e.message === 'gone') return toast('err', 'That item is gone', 'Items stay on your PC for 10 minutes. Send it again from the PC.');
+      if (e && e.message === 'gone') return toast('err', ['gone.item'], ['gone.detail']);
       toast('err', ...errorText('copy'));
     }
   }
@@ -325,24 +324,24 @@
   }
   async function copyImage(item, btn) {
     if (!(window.ClipboardItem && navigator.clipboard && navigator.clipboard.write)) {
-      return toast('err', 'This browser can’t copy images', 'Tap Save instead, then share it from your gallery.');
+      return toast('err', ['img.noCopy'], ['img.saveHint']);
     }
     try {
       const png = fetchItem(item).then((r) => r.blob()).then(toPng);
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
-      flashDone(btn, 'Copied');
+      flashDone(btn);
     } catch (e) {
       if (e && e.message === 'unauthorized') return;
-      if (e && e.message === 'gone') return toast('err', 'That image is gone', 'Items stay on your PC for 10 minutes. Send it again from the PC.');
-      toast('err', 'Couldn’t copy the image', 'Tap Save instead, then share it from your gallery.');
+      if (e && e.message === 'gone') return toast('err', ['gone.image'], ['gone.detail']);
+      toast('err', ['img.copyFail'], ['img.saveHint']);
     }
   }
 
   // ---------- send (phone -> PC) ----------
   const DONE_TEXT = {
-    text: ['On your PC’s clipboard', 'Paste with Ctrl+V'],
-    image: ['Image on your PC’s clipboard', 'Paste with Ctrl+V'],
-    file: ['Saved on your PC', 'In Downloads › CopyApp'],
+    text: [['done.text'], ['done.paste']],
+    image: [['done.image'], ['done.paste']],
+    file: [['done.file'], ['done.fileWhere']],
   };
 
   function addOutgoing(desc) {
@@ -357,35 +356,36 @@
     scrollToEnd(true);
 
     if (desc.thumb) {
-      const img = el('img', { class: 'out-thumb', src: desc.thumb, alt: 'Image you sent' });
+      const img = el('img', { class: 'out-thumb', src: desc.thumb, attrMsg: { alt: ['out.imgAlt'] } });
       img.addEventListener('load', () => scrollToEnd(false), { once: true });
       img.addEventListener('error', () => img.remove(), { once: true });
       card.append(img);
     }
     const bodyEl = el('div', { class: 'out-body' });
-    if (desc.text != null) bodyEl.append(el('p', { class: 'out-text', text: desc.text }));
+    if (desc.text != null) bodyEl.append(el('p', { class: 'out-text', dir: 'auto', text: desc.text }));
     if (desc.files) {
       const f = desc.files;
-      const name = f.length === 1 ? f[0].name : f[0].name + ' and ' + (f.length - 1) + ' more';
+      const name = f.length === 1 ? el('bdi', { text: f[0].name }) : el('span', { msg: ['out.more', { name: f[0].name, n: f.length - 1 }] });
       const total = f.reduce((a, b) => a + b.size, 0);
-      bodyEl.append(el('div', { class: 'file-row', style: 'padding:0' },
-        el('span', { class: 'file-tile', 'aria-hidden': 'true', text: f.length === 1 ? extOf(f[0].name, f[0].type) : f.length + '×' }),
-        el('div', {}, el('div', { class: 'file-name', text: name }), el('div', { class: 'file-sub', text: fmtSize(total) }))));
+      bodyEl.append(el('div', { class: 'file-row file-row-flush' },
+        el('span', { class: 'file-tile', 'aria-hidden': 'true', dir: 'ltr', text: f.length === 1 ? extOf(f[0].name, f[0].type) : f.length + '×' }),
+        el('div', {}, el('div', { class: 'file-name' }, name), el('div', { class: 'file-sub', text: fmtSize(total), 'data-size': total }))));
     }
     const statusSlot = el('div', { class: 'out-slot' });
     bodyEl.append(statusSlot);
     card.append(bodyEl);
-    node.setAttribute('aria-label', 'Sent to PC');
+    node.setAttribute('aria-label', T('out.aria'));
+    node.dataset.i18nAttr = 'aria-label:out.aria';
     return { node, statusSlot, total: desc.total || 0 };
   }
 
   function showProgress(entry, xhr) {
     const fill = el('div', { class: 'progress-fill' });
-    const pct = el('span', { class: 'progress-pct', text: '0%' });
-    const bytes = el('span', { text: entry.total > 0 ? 'Sending…' : 'Sending to your PC…' });
-    const cancel = el('button', { type: 'button', class: 'out-btn' }, icon('x'), el('span', { text: 'Cancel' }));
+    const pct = el('span', { class: 'progress-pct', dir: 'ltr', text: '0%' });
+    const bytes = el('span', { msg: [entry.total > 0 ? 'prog.sending' : 'prog.sendingPc'] });
+    const cancel = el('button', { type: 'button', class: 'out-btn' }, icon('x'), el('span', { msg: ['cancel'] }));
     cancel.addEventListener('click', () => xhr.abort());
-    const bar = el('div', { class: 'progress', role: 'progressbar', 'aria-label': 'Upload progress', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0' },
+    const bar = el('div', { class: 'progress', role: 'progressbar', attrMsg: { 'aria-label': ['prog.aria'] }, 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0' },
       el('div', { class: 'progress-track' }, fill),
       el('div', { class: 'progress-row' }, el('span', {}, pct, ' ', bytes), cancel));
     entry.statusSlot.replaceChildren(bar);
@@ -397,18 +397,20 @@
       fill.style.width = p + '%';
       pct.textContent = p + '%';
       bar.setAttribute('aria-valuenow', String(p));
-      bytes.textContent = p >= 100 ? 'Finishing up…' : fmtSize(loaded) + ' of ' + fmtSize(total);
+      setMsg(bytes, p >= 100 ? ['prog.finishing'] : ['prog.of', { a: fmtSize(loaded), b: fmtSize(total) }]);
       if (p >= 100) cancel.hidden = true;
     };
   }
 
+  // a and b are messages; b may be null.
   function showResult(entry, ok, a, b, retry, canceled) {
     entry.node.classList.toggle('is-error', !ok && !canceled);
     entry.node.classList.toggle('is-canceled', !!canceled);
     entry.node.classList.remove('is-busy');
-    const status = el('p', { class: 'out-status' }, icon(ok ? 'check' : canceled ? 'x' : 'alert'),el('span', {}, el('b', { text: a }), b ? el('br') : null, b || null));
+    const status = el('p', { class: 'out-status' }, icon(ok ? 'check' : canceled ? 'x' : 'alert'),
+      el('span', {}, el('b', { msg: a }), b ? el('br') : null, b ? el('span', { msg: b }) : null));
     if (!ok && retry) {
-      const again = el('button', { type: 'button', class: 'out-btn' }, icon('retry'), el('span', { text: 'Try again' }));
+      const again = el('button', { type: 'button', class: 'out-btn' }, icon('retry'), el('span', { msg: ['tryAgain'] }));
       again.addEventListener('click', () => { entry.node.classList.remove('is-error', 'is-canceled'); retry(); });
       entry.statusSlot.replaceChildren(el('div', { class: 'out-row' }, status, again));
     } else {
@@ -431,9 +433,9 @@
         if (xhr.status === 200 && res.ok) {
           const [a, b] = DONE_TEXT[res.kind] || DONE_TEXT.file;
           let detail = b;
-          if (res.kind === 'file' && res.saved && res.saved.length > 1) detail = res.saved.length + ' files in Downloads › CopyApp';
+          if (res.kind === 'file' && res.saved && res.saved.length > 1) detail = ['done.files', { n: res.saved.length }];
           showResult(entry, true, a, detail);
-          toast('ok', res.kind === 'file' ? 'Sent to your PC' : 'Copied to your PC', detail);
+          toast('ok', [res.kind === 'file' ? 'toast.sentPc' : 'toast.copiedPc'], detail);
           resolve(true);
           return;
         }
@@ -441,8 +443,8 @@
         let [a, b] = errorText(code);
         const partial = Array.isArray(res.saved) && res.saved.length > 0;
         if (partial) { // some files made it; say which, and don't resend them
-          a = 'Only some files were sent';
-          b = 'Saved on your PC: ' + res.saved.join(', ') + '. The rest failed: ' + b;
+          a = ['partial.title'];
+          b = ['partial.detail', { files: res.saved.join(', '), reason: T(...b) }];
         }
         showResult(entry, false, a, b, partial || code === 'unauthorized' || code === 'too_large' || code === 'too_many_pixels' || code === 'empty' ? null : retry);
         toast('err', a, b);
@@ -457,7 +459,7 @@
         resolve(false);
       };
       xhr.onabort = () => {
-        showResult(entry, false, 'Canceled', null, retry, true);
+        showResult(entry, false, ['canceled'], null, retry, true);
         resolve(false);
       };
       xhr.send(makeBody());
@@ -543,11 +545,7 @@
     const d = document.getElementById(id);
     if (!d || d.open) return;
     for (const other of document.querySelectorAll('dialog[open]')) other.close();
-    if (id === 'sheet-paste') {
-      $('#paste-sub').textContent = fromClipboard
-        ? 'This browser didn’t share your clipboard. Paste it here instead.'
-        : 'Type or paste below. It goes straight to your PC’s clipboard.';
-    }
+    if (id === 'sheet-paste') setMsg($('#paste-sub'), [fromClipboard ? 'paste.subClip' : 'paste.sub']);
     d.showModal();
     if (id === 'sheet-paste') setTimeout(() => $('#paste-text').focus(), 60);
     if (id === 'sheet-cert' || id === 'sheet-settings') loadCertFp();
@@ -580,11 +578,11 @@
       const a = el('a', { href: URL.createObjectURL(blob), download: 'copyapp-ca.crt' });
       body.append(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-      toast('ok', 'Certificate downloaded', 'Now follow the steps below.');
+      toast('ok', ['cert.ok'], ['cert.okSub']);
       store.set('setupDismissed', '1');
       setupCard.hidden = true;
     } catch {
-      toast('err', 'Your PC isn’t sharing the certificate right now', 'On your PC, choose Pair phone, then tap Download again.');
+      toast('err', ['cert.fail'], ['cert.failSub']);
     }
   });
 
@@ -592,7 +590,7 @@
   $('#confirm-unpair').addEventListener('click', async () => {
     $('#sheet-confirm').close();
     try { await fetch('/unpair', { method: 'POST' }); } catch { /* still forget locally */ }
-    goUnpaired('This phone is now unpaired. You can pair it again any time.');
+    goUnpaired('unpair.done');
   });
 
   const setupCard = $('#setup-card');
@@ -610,18 +608,20 @@
   let paired = false;
   let bannerTimer = 0;
 
+
   function onUnauthorized(silent) {
     if (!paired) return;
-    goUnpaired(silent ? null : 'This phone was unpaired. Scan the QR code on your PC to connect again.');
+    goUnpaired(silent ? null : 'unpair.remote');
   }
-  function goUnpaired(msg) {
+  // msgKey: i18n key for the lead line (null: the default).
+  function goUnpaired(msgKey) {
     paired = false;
     store.del('paired');
     closeStream();
     clearTimeout(retryTimer); clearInterval(countdownTimer); clearTimeout(bannerTimer);
     banner.hidden = true;
     for (const d of document.querySelectorAll('dialog[open]')) d.close();
-    $('#pair-lead').textContent = msg || 'This phone isn’t connected to a PC yet. It takes one scan.';
+    setMsg($('#pair-lead'), [msgKey || 'pair.lead']);
     setView('pair');
   }
   function closeStream() { if (es) { es.close(); es = null; } }
@@ -707,10 +707,7 @@
   function showBanner(due) {
     const render = () => {
       const s = Math.max(0, Math.ceil((due - Date.now()) / 1000));
-      bannerTitle.textContent = 'Can’t reach your PC';
-      bannerSub.textContent = attempt >= 4
-        ? (s > 0 ? 'Is the PC on and on this Wi‑Fi? Retrying in ' + s + ' s' : 'Reconnecting…')
-        : (s > 0 ? 'Reconnecting in ' + s + ' s' : 'Reconnecting…');
+      setMsg(bannerSub, s <= 0 ? ['banner.now'] : [attempt >= 4 ? 'banner.hint' : 'banner.in', { n: s }]);
     };
     render();
     clearInterval(countdownTimer);
@@ -723,13 +720,13 @@
   function hideBanner() {
     clearInterval(countdownTimer);
     clearTimeout(bannerTimer); bannerTimer = 0;
-    if (!banner.hidden) toast('ok', 'Back online', 'Connected to your PC again.', 2500);
+    if (!banner.hidden) toast('ok', ['online.t'], ['online.d'], 2500);
     banner.hidden = true;
   }
   async function retryNow() {
     clearTimeout(retryTimer);
     clearInterval(countdownTimer);
-    bannerSub.textContent = 'Reconnecting…';
+    setMsg(bannerSub, ['banner.now']);
     setConn('connecting');
     const s = await checkStatus();
     if (s === 'unpaired') return onUnauthorized();
@@ -741,6 +738,14 @@
   addEventListener('online', () => { if (paired && conn.dataset.state !== 'online') retryNow(); });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && paired && conn.dataset.state !== 'online') retryNow();
+  });
+
+  // Language switched (i18n.js already re-rendered every data-i18n node):
+  // refresh what is computed rather than looked up.
+  document.addEventListener('i18n:change', () => {
+    refreshTimes();
+    for (const n of feed.querySelectorAll('.file-sub[data-size]')) n.textContent = fmtSize(+n.dataset.size);
+    requestAnimationFrame(measureDock);
   });
 
   // ---------- start ----------
@@ -800,11 +805,11 @@
     const s = await checkStatus();
     if (share && s === 'unpaired') { shareWaiting = false; takeShared(); } // drop it: nowhere to send
     if (s === 'unpaired') {
-      goUnpaired(err === 'unauthorized' || share ? 'Sharing didn’t work because this phone isn’t paired. Scan the QR code on your PC first.' : null);
+      goUnpaired(err === 'unauthorized' || share ? 'start.shareUnpaired' : null);
       return;
     }
     if (s === 'down' && store.get('paired') !== '1') {
-      goUnpaired('Can’t reach your PC right now. Make sure CopyApp is running and you’re on the same Wi‑Fi.');
+      goUnpaired('start.down');
       setTimeout(start, 5000);
       return;
     }
@@ -816,7 +821,7 @@
     if (s === 'ok') connect(); else scheduleReconnect();
     if (sent) {
       const [a, b] = DONE_TEXT[sent] || DONE_TEXT.file;
-      toast('ok', sent === 'file' ? 'Sent to your PC' : 'Copied to your PC', sent === 'file' ? b : a + '. ' + b);
+      toast('ok', [sent === 'file' ? 'toast.sentPc' : 'toast.copiedPc'], sent === 'file' ? b : a);
     } else if (err) {
       toast('err', ...errorText(err));
     }

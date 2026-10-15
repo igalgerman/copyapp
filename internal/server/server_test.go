@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/igalgerman/copyapp/internal/auth"
+	"github.com/igalgerman/copyapp/internal/i18n"
 	"github.com/igalgerman/copyapp/internal/store"
 	"github.com/igalgerman/copyapp/internal/tlsutil"
 )
@@ -696,6 +697,9 @@ func TestPairingPageShowsShortFingerprint(t *testing.T) {
 	if !strings.Contains(body, tlsutil.ShortFingerprint(e.s.cfg.CAPEM)) || !strings.Contains(body, "match before installing") {
 		t.Fatal("pairing page must show the short fingerprint and the check instruction")
 	}
+	if !strings.Contains(body, `<html lang="he" dir="rtl">`) || !strings.Contains(body, `data-lang="ru"`) || !strings.Contains(body, i18n.T("pair.h1")) {
+		t.Fatal("pairing page must default to Hebrew RTL with a language switcher")
+	}
 }
 
 // ---- localhost-only /qr and /pairing ----
@@ -936,7 +940,7 @@ func TestTextToastHasNoPreview(t *testing.T) {
 	e.clip.mu.Lock()
 	defer e.clip.mu.Unlock()
 	last := e.clip.notes[len(e.clip.notes)-1]
-	if strings.Contains(last, "hunter2") || !strings.Contains(last, "Text received from phone (14 chars)") {
+	if strings.Contains(last, "hunter2") || !strings.Contains(last, i18n.T("toast.textBody", 14)) {
 		t.Fatalf("toast: %q", last)
 	}
 }

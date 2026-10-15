@@ -40,6 +40,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/igalgerman/copyapp/internal/auth"
+	"github.com/igalgerman/copyapp/internal/i18n"
 	"github.com/igalgerman/copyapp/internal/secret"
 	"github.com/igalgerman/copyapp/internal/store"
 	"github.com/igalgerman/copyapp/internal/tlsutil"
@@ -436,7 +437,7 @@ func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
 	s.pairedAt = time.Now()
 	s.mu.Unlock()
 	http.SetCookie(w, s.cookie(sid, 400*24*3600))
-	s.cfg.Clip.Notify("CopyApp", "Phone paired")
+	s.cfg.Clip.Notify("CopyApp", i18n.T("toast.paired"))
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -460,7 +461,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 func (s *Server) unpair(w http.ResponseWriter, r *http.Request) {
 	s.Unpair()
 	http.SetCookie(w, s.cookie("", -1))
-	s.cfg.Clip.Notify("CopyApp", "Phone unpaired")
+	s.cfg.Clip.Notify("CopyApp", i18n.T("toast.unpaired"))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -604,7 +605,7 @@ func (s *Server) setText(t string) (*sendResult, error) {
 		return nil, &sendError{status: http.StatusInternalServerError, code: "clipboard", msg: "could not set the PC clipboard", internal: err}
 	}
 	// Never show the text itself: toasts appear on the lock screen and in history.
-	s.cfg.Clip.Notify("Copied from phone", fmt.Sprintf("Text received from phone (%d chars)", utf8.RuneCountInString(t)))
+	s.cfg.Clip.Notify(i18n.T("toast.textTitle"), i18n.T("toast.textBody", utf8.RuneCountInString(t)))
 	return &sendResult{Kind: "text"}, nil
 }
 
@@ -641,7 +642,7 @@ func (s *Server) sendMultipart(r *http.Request) (res *sendResult, err error) {
 	defer func() {
 		if err != nil && len(saved) > 0 {
 			res = &sendResult{Kind: "file", Saved: saved}
-			s.cfg.Clip.Notify("Partly saved from phone", fmt.Sprintf("%d saved, the rest failed", len(saved)))
+			s.cfg.Clip.Notify(i18n.T("toast.partTitle"), i18n.T("toast.partBody", len(saved)))
 		}
 	}()
 	readBytes := func(p io.Reader) ([]byte, error) {
@@ -760,7 +761,7 @@ func (s *Server) sendMultipart(r *http.Request) (res *sendResult, err error) {
 			if err := s.cfg.Clip.SetImagePNG(pending.data); err != nil {
 				return nil, &sendError{status: http.StatusInternalServerError, code: "clipboard", msg: "could not set the PC clipboard", internal: err}
 			}
-			s.cfg.Clip.Notify("Image copied from phone", "Paste it with Ctrl+V")
+			s.cfg.Clip.Notify(i18n.T("toast.imageTitle"), i18n.T("toast.imageBody"))
 			return &sendResult{Kind: "image"}, nil
 		}
 	}
@@ -770,9 +771,9 @@ func (s *Server) sendMultipart(r *http.Request) (res *sendResult, err error) {
 	if len(saved) > 0 {
 		msg := saved[0]
 		if len(saved) > 1 {
-			msg = fmt.Sprintf("%s and %d more", saved[0], len(saved)-1)
+			msg = i18n.T("toast.savedMore", saved[0], len(saved)-1)
 		}
-		s.cfg.Clip.Notify("Saved from phone", msg)
+		s.cfg.Clip.Notify(i18n.T("toast.savedTitle"), msg)
 		return &sendResult{Kind: "file", Saved: saved}, nil
 	}
 	if mode == "clipboard" {
