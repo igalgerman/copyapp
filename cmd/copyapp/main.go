@@ -24,6 +24,7 @@ import (
 
 	"github.com/igalgerman/copyapp/internal/auth"
 	"github.com/igalgerman/copyapp/internal/pc"
+	"github.com/igalgerman/copyapp/internal/secret"
 	"github.com/igalgerman/copyapp/internal/server"
 	"github.com/igalgerman/copyapp/internal/store"
 	"github.com/igalgerman/copyapp/internal/tlsutil"
@@ -41,6 +42,7 @@ var (
 	sess     *auth.Auth
 	machine  *pc.PC
 	firstRun bool
+	localKey string // per-launch secret for the loopback routes (see secret.LocalKeyFile)
 )
 
 func main() {
@@ -85,6 +87,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if localKey, err = secret.NewLocalKey(dataDir); err != nil {
+		log.Fatal(err)
+	}
 	sess = auth.New()
 	if err := sess.Persist(filepath.Join(dataDir, "session.json")); err != nil {
 		log.Printf("persist session: %v", err)
@@ -113,7 +118,8 @@ func main() {
 			}
 			return "https://" + net.JoinHostPort(ip, strconv.Itoa(httpsPort))
 		},
-		Logf: log.Printf,
+		Logf:        log.Printf,
+		LocalSecret: localKey,
 	})
 
 	go func() {
@@ -181,8 +187,10 @@ func readPort(name string) int {
 	return p
 }
 
-func pairingURL() string {
-	return "http://127.0.0.1:" + strconv.Itoa(readPort("local-port.txt")) + "/pairing"
+// pairingURL carries the local secret once; the page trades it for an
+// HttpOnly cookie and redirects to the bare URL.
+func pairingURL(key string) string {
+	return "http://127.0.0.1:" + strconv.Itoa(readPort("local-port.txt")) + "/pairing?k=" + url.QueryEscape(key)
 }
 
 func openBrowser(u string) {
@@ -192,11 +200,12 @@ func openBrowser(u string) {
 // secondInstance forwards to the running instance.
 func secondInstance(fileArg string) {
 	port := readPort("local-port.txt")
-	if port == 0 {
+	key, err := secret.ReadLocalKey(dataDir)
+	if port == 0 || err != nil {
 		return
 	}
 	if fileArg == "" {
-		openBrowser(pairingURL())
+		openBrowser(pairingURL(key))
 		return
 	}
 	abs, err := filepath.Abs(fileArg)
@@ -204,7 +213,7 @@ func secondInstance(fileArg string) {
 		return
 	}
 	req, _ := http.NewRequest("POST", "http://127.0.0.1:"+strconv.Itoa(port)+sendFilePath+"?path="+url.QueryEscape(abs), nil)
-	req.Header.Set("X-CopyApp", "1")
+	req.Header.Set("X-CopyApp", key)
 	resp, err := (&http.Client{Timeout: 5 * time.Minute}).Do(req)
 	if err != nil {
 		return
@@ -213,13 +222,15 @@ func secondInstance(fileArg string) {
 }
 
 // handleSendFile lets a second launch (Explorer "Send to") hand a file path to
-// this instance. Loopback peer, 127.0.0.1 Host, and a custom header (browsers
-// cannot send it cross-site without a CORS preflight, which is never granted).
+// this instance. Loopback peer, 127.0.0.1 Host, no Origin, and the per-launch
+// secret in X-CopyApp (only this Windows user can read it from %APPDATA%;
+// browsers cannot send the header cross-site without a CORS preflight, which
+// is never granted).
 func handleSendFile(w http.ResponseWriter, r *http.Request) {
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
 	ip := net.ParseIP(host)
 	hh, _, _ := net.SplitHostPort(r.Host)
-	if ip == nil || !ip.IsLoopback() || hh != "127.0.0.1" || r.Header.Get("X-CopyApp") != "1" || r.Header.Get("Origin") != "" {
+	if ip == nil || !ip.IsLoopback() || hh != "127.0.0.1" || !secret.Equal(r.Header.Get("X-CopyApp"), localKey) || r.Header.Get("Origin") != "" {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -290,7 +301,7 @@ func hotkeyLoop() {
 
 func startPairing() {
 	srv.StartPairing()
-	openBrowser(pairingURL())
+	openBrowser(pairingURL(localKey))
 }
 
 func onReady() {

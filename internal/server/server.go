@@ -11,7 +11,8 @@
 //	GET  /item/{id}              outbox item bytes
 //	POST /unpair                 drop the session
 //	GET  /pairing, /qr, /pairing/status, POST /pairing/open
-//	                             PC-only pages (loopback source and localhost Host)
+//	                             PC-only pages (loopback source, localhost Host and
+//	                             the per-launch local secret; see Config.LocalSecret)
 package server
 
 import (
@@ -37,6 +38,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/igalgerman/copyapp/internal/auth"
+	"github.com/igalgerman/copyapp/internal/secret"
 	"github.com/igalgerman/copyapp/internal/store"
 )
 
@@ -71,7 +73,15 @@ type Config struct {
 	// Logf receives one line per request (method, path without query, status)
 	// and errors. Never secrets. Optional.
 	Logf func(format string, args ...any)
+	// LocalSecret authorizes the PC-only routes. Loopback is shared by every
+	// Windows user on the machine, so peer address alone is not enough: a
+	// request must carry it as the LocalCookieName cookie (set by opening
+	// /pairing?k=SECRET) or the X-CopyApp header. Empty denies those routes.
+	LocalSecret string
 }
+
+// LocalCookieName holds the local secret for the PC's own pairing page.
+const LocalCookieName = "copyapp_local"
 
 type client struct {
 	ch   chan []byte
@@ -288,13 +298,41 @@ func isLocalHost(host string) bool {
 	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
+// LocalAuthorized reports whether r carries the local secret (cookie or
+// X-CopyApp header).
+func LocalAuthorized(r *http.Request, key string) bool {
+	if c, err := r.Cookie(LocalCookieName); err == nil && secret.Equal(c.Value, key) {
+		return true
+	}
+	return secret.Equal(r.Header.Get("X-CopyApp"), key)
+}
+
 // localOnly allows only loopback peers that address us as localhost (the
-// Host check blocks DNS-rebinding pages).
+// Host check blocks DNS-rebinding pages) and hold the local secret (blocks
+// other users of this PC). GET /pairing?k=SECRET trades the secret for the
+// cookie.
 func (s *Server) localOnly(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		a, ok := remoteAddr(r)
 		if !ok || !a.IsLoopback() || !isLocalHost(r.Host) {
 			jsonError(w, http.StatusForbidden, "forbidden", "only available on this PC")
+			return
+		}
+		if k := r.URL.Query().Get("k"); k != "" && r.Method == http.MethodGet && r.URL.Path == "/pairing" {
+			if !secret.Equal(k, s.cfg.LocalSecret) {
+				jsonError(w, http.StatusForbidden, "forbidden", "open this page from the CopyApp tray menu")
+				return
+			}
+			http.SetCookie(w, &http.Cookie{
+				Name: LocalCookieName, Value: s.cfg.LocalSecret, Path: "/",
+				HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode,
+			})
+			w.Header().Set("Cache-Control", "no-store")
+			http.Redirect(w, r, "/pairing", http.StatusSeeOther) // drop the key from the address bar
+			return
+		}
+		if !LocalAuthorized(r, s.cfg.LocalSecret) {
+			jsonError(w, http.StatusForbidden, "forbidden", "open this page from the CopyApp tray menu")
 			return
 		}
 		h(w, r)

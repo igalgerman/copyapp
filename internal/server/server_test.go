@@ -70,6 +70,8 @@ type env struct {
 
 const lanAddr = "192.168.1.20:5555"
 
+const testLocalKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
 func newEnv(t *testing.T, max int64) *env {
 	t.Helper()
 	e := &env{t: t, a: auth.New(), st: store.New(), clip: &fakeClip{}, logs: &bytes.Buffer{}}
@@ -77,7 +79,7 @@ func newEnv(t *testing.T, max int64) *env {
 	e.s = New(Config{
 		Auth: e.a, Store: e.st, Clip: e.clip, SaveDir: e.dir,
 		CAPEM:    []byte("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"),
-		MaxBytes: max,
+		MaxBytes: max, LocalSecret: testLocalKey,
 		BaseURL:  func() string { return "https://192.168.1.5:8443" },
 		Logf: func(f string, a ...any) {
 			e.lmu.Lock()
@@ -681,11 +683,84 @@ func TestStatus(t *testing.T) {
 
 // ---- localhost-only /qr and /pairing ----
 
+// local is a request from this PC's own pairing page (holding the local cookie).
 func local(e *env, method, target string) *http.Request {
+	r := bareLocal(e, method, target)
+	r.AddCookie(&http.Cookie{Name: LocalCookieName, Value: testLocalKey})
+	return r
+}
+
+// bareLocal is a loopback request without the local secret (e.g. another
+// Windows user on the same PC).
+func bareLocal(e *env, method, target string) *http.Request {
 	r := e.req(method, target, nil)
 	r.RemoteAddr = "127.0.0.1:50000"
 	r.Host = "localhost:8443"
+	if method == "POST" {
+		r.Header.Set("Origin", "http://localhost:8443")
+	}
 	return r
+}
+
+func TestLocalRoutesNeedSecret(t *testing.T) {
+	e := newEnv(t, 0)
+	e.s.StartPairing()
+	routes := [][2]string{{"GET", "/qr"}, {"GET", "/pairing"}, {"GET", "/pairing/status"}, {"POST", "/pairing/open"}}
+	for _, rt := range routes {
+		if w := e.do(bareLocal(e, rt[0], rt[1])); w.Code != http.StatusForbidden {
+			t.Errorf("%s without secret: %d", rt[1], w.Code)
+		}
+		r := bareLocal(e, rt[0], rt[1])
+		r.AddCookie(&http.Cookie{Name: LocalCookieName, Value: strings.Repeat("0", 64)})
+		if w := e.do(r); w.Code != http.StatusForbidden {
+			t.Errorf("%s with wrong cookie: %d", rt[1], w.Code)
+		}
+		r = bareLocal(e, rt[0], rt[1])
+		r.Header.Set("X-CopyApp", testLocalKey)
+		if w := e.do(r); w.Code == http.StatusForbidden {
+			t.Errorf("%s with header secret: %d", rt[1], w.Code)
+		}
+		if w := e.do(local(e, rt[0], rt[1])); w.Code == http.StatusForbidden {
+			t.Errorf("%s with cookie: %d", rt[1], w.Code)
+		}
+	}
+}
+
+func TestPairingKeySetsLocalCookie(t *testing.T) {
+	e := newEnv(t, 0)
+	w := e.do(bareLocal(e, "GET", "/pairing?k=nope"))
+	if w.Code != http.StatusForbidden || len(w.Result().Cookies()) != 0 {
+		t.Fatalf("wrong key: %d %v", w.Code, w.Result().Cookies())
+	}
+	w = e.do(bareLocal(e, "GET", "/pairing?k="+testLocalKey))
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/pairing" {
+		t.Fatalf("key exchange: %d %q", w.Code, w.Header().Get("Location"))
+	}
+	var c *http.Cookie
+	for _, x := range w.Result().Cookies() {
+		if x.Name == LocalCookieName {
+			c = x
+		}
+	}
+	if c == nil || c.Value != testLocalKey || !c.HttpOnly || c.SameSite != http.SameSiteStrictMode || c.Path != "/" {
+		t.Fatalf("local cookie: %+v", c)
+	}
+	// The same key from the LAN is useless.
+	r := e.req("GET", "/pairing?k="+testLocalKey, nil)
+	if w := e.do(r); w.Code != http.StatusForbidden {
+		t.Fatalf("LAN with key: %d", w.Code)
+	}
+}
+
+func TestEmptyLocalSecretFailsClosed(t *testing.T) {
+	e := newEnv(t, 0)
+	e.s.cfg.LocalSecret = ""
+	r := bareLocal(e, "GET", "/pairing/status")
+	r.AddCookie(&http.Cookie{Name: LocalCookieName, Value: ""})
+	r.Header.Set("X-CopyApp", "")
+	if w := e.do(r); w.Code != http.StatusForbidden {
+		t.Fatalf("empty secret: %d", w.Code)
+	}
 }
 
 func TestQRAndPairingPageLocalOnly(t *testing.T) {

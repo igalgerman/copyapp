@@ -81,7 +81,9 @@ try {
     Check '/ca.crt available while pairing is open' ((Invoke-WebRequest "$B/ca.crt" @opt).StatusCode -eq 200)
 
     # pair: decode the QR like a phone camera
-    Invoke-WebRequest "$L/qr" -OutFile "$tmp\qr.png" | Out-Null
+    $lh = @{ 'X-CopyApp' = (Get-Content "$dd\local.key").Trim() }
+    Check '/qr without the local key -> 403' ((Invoke-WebRequest "$L/qr" @opt).StatusCode -eq 403)
+    Invoke-WebRequest "$L/qr" -Headers $lh -OutFile "$tmp\qr.png" | Out-Null
     $env:NODE_PATH = "$node\node_modules"
     $pairUrl = node "$PSScriptRoot\qr-decode.js" "$tmp\qr.png"
     Check 'QR decodes to a pair URL' ($pairUrl -match '^https://.+/pair\?t=[0-9a-f]{64}$') $pairUrl
@@ -130,7 +132,8 @@ try {
 
     # loopback-only endpoints
     Check 'send-file without X-CopyApp -> 403' ((Invoke-WebRequest "$L/local/send-file?path=x" -Method POST @opt).StatusCode -eq 403)
-    Check 'send-file with Origin -> 403' ((Invoke-WebRequest "$L/local/send-file?path=x" -Method POST -Headers @{ 'X-CopyApp' = '1'; Origin = 'http://evil' } @opt).StatusCode -eq 403)
+    Check 'send-file with a wrong key -> 403' ((Invoke-WebRequest "$L/local/send-file?path=x" -Method POST -Headers @{ 'X-CopyApp' = '1' } @opt).StatusCode -eq 403)
+    Check 'send-file with Origin -> 403' ((Invoke-WebRequest "$L/local/send-file?path=x" -Method POST -Headers @{ 'X-CopyApp' = $lh.'X-CopyApp'; Origin = 'http://evil' } @opt).StatusCode -eq 403)
     Check 'pairing/open cross-origin -> 403' ((Invoke-WebRequest "$L/pairing/open" -Method POST -Headers @{ Origin = 'http://evil' } @opt).StatusCode -eq 403)
 
     # session survives a restart; unpair revokes
