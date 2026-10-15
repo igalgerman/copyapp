@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -72,12 +73,21 @@ type KeyProtector interface {
 // protectedKeyType is the PEM block type of a key encrypted by a KeyProtector.
 const protectedKeyType = "COPYAPP PROTECTED EC PRIVATE KEY"
 
-// Load returns a TLS config serving a leaf certificate for ips (plus
-// 127.0.0.1, localhost and copyapp.local), and the CA certificate in PEM form
-// for installing on the phone. Keys and certificates are stored in dir with
-// mode 0600, keys encrypted with kp; they are created on first use. Plain
-// keys from older versions are re-encrypted with kp when read.
-func Load(dir string, ips []net.IP, kp KeyProtector) (*tls.Config, []byte, error) {
+// recheckInterval is how often a handshake may re-read the LAN IPs.
+var recheckInterval = 15 * time.Second
+
+// Load returns a TLS config serving a leaf certificate for the current LAN
+// IPs (plus 127.0.0.1, localhost and copyapp.local), and the CA certificate in
+// PEM form for installing on the phone. Keys and certificates are stored in
+// dir with mode 0600, keys encrypted with kp; they are created on first use.
+// Plain keys from older versions are re-encrypted with kp when read.
+//
+// ips is re-read at most every 15 s during handshakes; when an address is
+// missing from the leaf (DHCP renewal, another Wi-Fi) a new leaf is issued by
+// the same CA, so the phone never sees a certificate error. Note that the
+// phone's session cookie and installed PWA are tied to the origin
+// (https://IP:port), so a new IP still means opening the new address.
+func Load(dir string, ips func() []net.IP, kp KeyProtector) (*tls.Config, []byte, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, nil, err
 	}
@@ -85,7 +95,8 @@ func Load(dir string, ips []net.IP, kp KeyProtector) (*tls.Config, []byte, error
 	if err != nil {
 		return nil, nil, err
 	}
-	want := append([]net.IP{net.IPv4(127, 0, 0, 1)}, ips...)
+	ls := &leafSource{dir: dir, ca: caCert, caKey: caKey, kp: kp, ips: ips}
+	want := ls.want()
 	leaf, err := loadLeaf(dir, caCert, want, kp)
 	if err != nil {
 		leaf, err = createLeaf(dir, caCert, caKey, want, kp)
@@ -93,12 +104,49 @@ func Load(dir string, ips []net.IP, kp KeyProtector) (*tls.Config, []byte, error
 			return nil, nil, err
 		}
 	}
+	ls.cert, ls.checked = &leaf, time.Now()
 	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCert.Raw})
 	cfg := &tls.Config{
-		MinVersion:   tls.VersionTLS12,
-		Certificates: []tls.Certificate{leaf},
+		MinVersion:     tls.VersionTLS12,
+		GetCertificate: ls.get,
 	}
 	return cfg, caPEM, nil
+}
+
+// leafSource serves the leaf and replaces it when the LAN IPs change.
+type leafSource struct {
+	dir   string
+	ca    *x509.Certificate
+	caKey *ecdsa.PrivateKey
+	kp    KeyProtector
+	ips   func() []net.IP
+
+	mu      sync.Mutex
+	cert    *tls.Certificate
+	checked time.Time
+}
+
+func (l *leafSource) want() []net.IP {
+	return append([]net.IP{net.IPv4(127, 0, 0, 1)}, l.ips()...)
+}
+
+func (l *leafSource) get(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if time.Since(l.checked) < recheckInterval {
+		return l.cert, nil
+	}
+	l.checked = time.Now()
+	want := l.want()
+	if usable(l.cert.Leaf, want) == nil {
+		return l.cert, nil
+	}
+	leaf, err := createLeaf(l.dir, l.ca, l.caKey, want, l.kp)
+	if err != nil {
+		return l.cert, nil // keep serving the old leaf; retry after the interval
+	}
+	l.cert = &leaf
+	return l.cert, nil
 }
 
 // Fingerprint returns the SHA-256 fingerprint of the first certificate in
@@ -167,8 +215,16 @@ func loadLeaf(dir string, ca *x509.Certificate, want []net.IP, kp KeyProtector) 
 	if err := c.CheckSignatureFrom(ca); err != nil {
 		return tls.Certificate{}, err
 	}
+	if err := usable(c, want); err != nil {
+		return tls.Certificate{}, err
+	}
+	return tls.Certificate{Certificate: [][]byte{c.Raw}, PrivateKey: key, Leaf: c}, nil
+}
+
+// usable checks that the leaf covers every IP in want and is not near expiry.
+func usable(c *x509.Certificate, want []net.IP) error {
 	if time.Until(c.NotAfter) < renewBefore {
-		return tls.Certificate{}, errors.New("leaf expiring")
+		return errors.New("leaf expiring")
 	}
 	for _, ip := range want {
 		found := false
@@ -179,10 +235,10 @@ func loadLeaf(dir string, ca *x509.Certificate, want []net.IP, kp KeyProtector) 
 			}
 		}
 		if !found {
-			return tls.Certificate{}, errors.New("leaf missing IP")
+			return errors.New("leaf missing IP")
 		}
 	}
-	return tls.Certificate{Certificate: [][]byte{c.Raw}, PrivateKey: key, Leaf: c}, nil
+	return nil
 }
 
 func createLeaf(dir string, ca *x509.Certificate, caKey *ecdsa.PrivateKey, ips []net.IP, kp KeyProtector) (tls.Certificate, error) {

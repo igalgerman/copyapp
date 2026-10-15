@@ -19,16 +19,77 @@ import (
 	"time"
 )
 
+func fixed(ips ...net.IP) func() []net.IP { return func() []net.IP { return ips } }
+
+// leafOf returns the certificate a handshake would be served.
 func leafOf(t *testing.T, cfg *tls.Config) *x509.Certificate {
 	t.Helper()
-	if len(cfg.Certificates) != 1 {
-		t.Fatalf("want 1 cert, got %d", len(cfg.Certificates))
+	tc, err := cfg.GetCertificate(&tls.ClientHelloInfo{})
+	if err != nil || tc == nil || len(tc.Certificate) != 1 {
+		t.Fatalf("GetCertificate: %v %v", tc, err)
 	}
-	c, err := x509.ParseCertificate(cfg.Certificates[0].Certificate[0])
+	c, err := x509.ParseCertificate(tc.Certificate[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	return c
+}
+
+// handshake runs a real TLS handshake verifying the server as host.
+func handshake(cfg *tls.Config, caPEM []byte, host string) error {
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(caPEM)
+	a, b := net.Pipe()
+	defer a.Close()
+	defer b.Close()
+	go tls.Server(a, cfg).Handshake()
+	return tls.Client(b, &tls.Config{RootCAs: roots, ServerName: host}).Handshake()
+}
+
+func TestLeafFollowsIPChangeAtRuntime(t *testing.T) {
+	defer func(d time.Duration) { recheckInterval = d }(recheckInterval)
+	recheckInterval = 0
+	d := t.TempDir()
+	ips := []net.IP{net.ParseIP("192.168.1.5")}
+	cfg, caPEM, err := Load(d, func() []net.IP { return ips }, fakeProtector{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := handshake(cfg, caPEM, "192.168.1.5"); err != nil {
+		t.Fatalf("initial IP: %v", err)
+	}
+	first := leafOf(t, cfg)
+
+	ips = []net.IP{net.ParseIP("10.0.0.7")} // e.g. DHCP gave a new address
+	if err := handshake(cfg, caPEM, "10.0.0.7"); err != nil {
+		t.Fatalf("new IP must be served without restart: %v", err)
+	}
+	second := leafOf(t, cfg)
+	if bytes.Equal(first.Raw, second.Raw) {
+		t.Fatal("leaf not regenerated")
+	}
+	if !bytes.Equal(leafOf(t, cfg).Raw, second.Raw) {
+		t.Fatal("leaf regenerated without reason")
+	}
+	// Persisted: a restart serves the new leaf under the same CA.
+	cfg2, caPEM2, err := Load(d, func() []net.IP { return ips }, fakeProtector{})
+	if err != nil || !bytes.Equal(caPEM, caPEM2) || !bytes.Equal(leafOf(t, cfg2).Raw, second.Raw) {
+		t.Fatalf("restart after regeneration: %v", err)
+	}
+}
+
+func TestLeafRecheckIsRateLimited(t *testing.T) {
+	calls := 0
+	cfg, _, err := Load(t.TempDir(), func() []net.IP { calls++; return []net.IP{net.ParseIP("192.168.1.5")} }, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 5 {
+		leafOf(t, cfg)
+	}
+	if calls > 2 { // Load + at most one recheck within the interval
+		t.Fatalf("LAN IPs read %d times", calls)
+	}
 }
 
 func pool(t *testing.T, caPEM []byte) *x509.CertPool {
@@ -43,11 +104,11 @@ func pool(t *testing.T, caPEM []byte) *x509.CertPool {
 func TestLoadStableCAAndLeafVerifies(t *testing.T) {
 	d := t.TempDir()
 	ips := []net.IP{net.ParseIP("192.168.1.5")}
-	cfg1, ca1, err := Load(d, ips, nil)
+	cfg1, ca1, err := Load(d, fixed(ips...), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg2, ca2, err := Load(d, ips, nil)
+	cfg2, ca2, err := Load(d, fixed(ips...), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,11 +131,11 @@ func TestLoadStableCAAndLeafVerifies(t *testing.T) {
 
 func TestNewIPRegeneratesLeafKeepsCA(t *testing.T) {
 	d := t.TempDir()
-	_, ca1, err := Load(d, []net.IP{net.ParseIP("192.168.1.5")}, nil)
+	_, ca1, err := Load(d, fixed(net.ParseIP("192.168.1.5")), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, ca2, err := Load(d, []net.IP{net.ParseIP("192.168.1.5"), net.ParseIP("10.0.0.7")}, nil)
+	cfg, ca2, err := Load(d, fixed(net.ParseIP("192.168.1.5"), net.ParseIP("10.0.0.7")), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +152,7 @@ func TestKeyFilePermissions(t *testing.T) {
 		t.Skip("POSIX permission bits are not meaningful on Windows; %APPDATA% ACLs apply")
 	}
 	d := t.TempDir()
-	if _, _, err := Load(d, []net.IP{net.ParseIP("192.168.1.5")}, nil); err != nil {
+	if _, _, err := Load(d, fixed(net.ParseIP("192.168.1.5")), nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range []string{caKeyFile, leafKeyFile} {
@@ -108,7 +169,7 @@ func TestKeyFilePermissions(t *testing.T) {
 // The CA is name-constrained: a leaf it signs for a public IP must not verify.
 func TestCANameConstrained(t *testing.T) {
 	d := t.TempDir()
-	_, caPEM, err := Load(d, []net.IP{net.ParseIP("192.168.1.5")}, nil)
+	_, caPEM, err := Load(d, fixed(net.ParseIP("192.168.1.5")), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,12 +257,12 @@ func assertProtected(t *testing.T, d string) {
 func TestKeysProtectedAtRest(t *testing.T) {
 	d := t.TempDir()
 	ips := []net.IP{net.ParseIP("192.168.1.5")}
-	cfg1, ca1, err := Load(d, ips, fakeProtector{})
+	cfg1, ca1, err := Load(d, fixed(ips...), fakeProtector{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertProtected(t, d)
-	cfg2, ca2, err := Load(d, ips, fakeProtector{})
+	cfg2, ca2, err := Load(d, fixed(ips...), fakeProtector{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,11 +274,11 @@ func TestKeysProtectedAtRest(t *testing.T) {
 func TestPlaintextKeysMigrated(t *testing.T) {
 	d := t.TempDir()
 	ips := []net.IP{net.ParseIP("192.168.1.5")}
-	cfg1, ca1, err := Load(d, ips, nil) // as written by older versions
+	cfg1, ca1, err := Load(d, fixed(ips...), nil) // as written by older versions
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg2, ca2, err := Load(d, ips, fakeProtector{})
+	cfg2, ca2, err := Load(d, fixed(ips...), fakeProtector{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,11 +291,11 @@ func TestPlaintextKeysMigrated(t *testing.T) {
 func TestUnreadableCAKeyIsNotReplaced(t *testing.T) {
 	d := t.TempDir()
 	ips := []net.IP{net.ParseIP("192.168.1.5")}
-	if _, _, err := Load(d, ips, fakeProtector{}); err != nil {
+	if _, _, err := Load(d, fixed(ips...), fakeProtector{}); err != nil {
 		t.Fatal(err)
 	}
 	before, _ := os.ReadFile(filepath.Join(d, caCertFile))
-	if _, _, err := Load(d, ips, nil); err == nil {
+	if _, _, err := Load(d, fixed(ips...), nil); err == nil {
 		t.Fatal("a protected CA key without its protector must fail, not be regenerated")
 	}
 	after, _ := os.ReadFile(filepath.Join(d, caCertFile))
@@ -244,7 +305,7 @@ func TestUnreadableCAKeyIsNotReplaced(t *testing.T) {
 }
 
 func TestCAIsUsableRoot(t *testing.T) {
-	_, caPEM, err := Load(t.TempDir(), []net.IP{net.ParseIP("192.168.1.5")}, nil)
+	_, caPEM, err := Load(t.TempDir(), fixed(net.ParseIP("192.168.1.5")), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
