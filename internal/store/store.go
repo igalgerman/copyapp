@@ -19,6 +19,9 @@ import (
 const (
 	// MaxItemSize is the per-item cap (200 MB).
 	MaxItemSize = 200 << 20
+	// MaxImagePixels caps images put on the clipboard (50 megapixels): a small
+	// PNG can declare a huge canvas that Windows would have to decode.
+	MaxImagePixels = 50_000_000
 	// MaxTotalSize caps all outbox items together (400 MB).
 	MaxTotalSize = 400 << 20
 	// Expiry is how long items stay in the outbox.

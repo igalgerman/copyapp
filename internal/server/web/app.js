@@ -101,6 +101,7 @@
     empty: ['Nothing to send', 'Your clipboard is empty. Copy something first.'],
     not_png: ['Your PC couldn’t paste that image', 'Only PNG images can go to the clipboard. Send it with File instead.'],
     too_large: ['That’s too big', 'The limit is 200 MB per transfer. Try a smaller file.'],
+    too_many_pixels: ['That image is too big to paste', 'Images over 50 megapixels can’t go to the clipboard. Send it with File instead.'],
     unauthorized: ['This phone isn’t paired anymore', 'Scan the QR code on your PC to connect again.'],
     unsupported: ['Your PC didn’t accept that', 'Try sending it as a file instead.'],
     bad_request: ['Your PC couldn’t read that', 'Try sending it again.'],
@@ -437,7 +438,7 @@
         }
         const code = res.code || (xhr.status === 413 ? 'too_large' : xhr.status === 401 ? 'unauthorized' : 'bad_request');
         const [a, b] = errorText(code);
-        showResult(entry, false, a, b, code === 'unauthorized' || code === 'too_large' || code === 'empty' ? null : retry);
+        showResult(entry, false, a, b, code === 'unauthorized' || code === 'too_large' || code === 'too_many_pixels' || code === 'empty' ? null : retry);
         toast('err', a, b);
         if (code === 'unauthorized') onUnauthorized(true);
         resolve(false);

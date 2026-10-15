@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"hash/crc32"
 	"image"
 	"image/png"
 	"io"
@@ -848,5 +850,42 @@ func TestFaviconAndWoff2(t *testing.T) {
 	w = e.do(e.req("GET", "/bricolage.woff2", nil))
 	if w.Code != 200 || w.Header().Get("Content-Type") != "font/woff2" {
 		t.Fatalf("woff2: %d %q", w.Code, w.Header().Get("Content-Type"))
+	}
+}
+
+// hugePNG is a valid PNG whose header claims w x h pixels (decoding the
+// header is all the server does before handing it to the clipboard).
+func hugePNG(w, h uint32) []byte {
+	b := pngBytes()
+	binary.BigEndian.PutUint32(b[16:], w)
+	binary.BigEndian.PutUint32(b[20:], h)
+	binary.BigEndian.PutUint32(b[29:], crc32.ChecksumIEEE(b[12:29]))
+	return b
+}
+
+func TestHugePNGNotPutOnClipboard(t *testing.T) {
+	e := newEnv(t, 0)
+	c := e.pair()
+	p := hugePNG(10000, 5001) // just over 50 megapixels
+	w := e.sendMultipart(c, part{field: "mode", data: []byte("clipboard")},
+		part{field: "file", filename: "big.png", ctype: "image/png", data: p, isFile: true})
+	if w.Code != http.StatusRequestEntityTooLarge || !strings.Contains(w.Body.String(), `"too_many_pixels"`) {
+		t.Fatalf("clipboard mode: %d %s", w.Code, w.Body)
+	}
+	if _, n := e.clip.calls(); n != 0 || len(e.savedFiles()) != 0 {
+		t.Fatal("huge PNG reached the clipboard or disk")
+	}
+	// Without an explicit mode it is simply saved as a file.
+	w = e.sendMultipart(c, part{field: "file", filename: "big.png", ctype: "image/png", data: p, isFile: true})
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"kind":"file"`) {
+		t.Fatalf("auto mode: %d %s", w.Code, w.Body)
+	}
+	if _, n := e.clip.calls(); n != 0 || len(e.savedFiles()) != 1 {
+		t.Fatal("huge PNG should be saved, not copied")
+	}
+	// Exactly 50 megapixels is still fine.
+	w = e.sendMultipart(c, part{field: "file", filename: "ok.png", ctype: "image/png", data: hugePNG(10000, 5000), isFile: true})
+	if _, n := e.clip.calls(); w.Code != http.StatusOK || n != 1 {
+		t.Fatalf("50 MP: %d %s", w.Code, w.Body)
 	}
 }

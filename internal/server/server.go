@@ -724,14 +724,22 @@ func (s *Server) sendMultipart(r *http.Request) (*sendResult, error) {
 	}
 
 	if pending != nil && nFiles == 1 {
-		if _, err := png.DecodeConfig(bytes.NewReader(pending.data)); err != nil {
+		cfg, err := png.DecodeConfig(bytes.NewReader(pending.data))
+		if err != nil {
 			return nil, badRequest("not_png", "the image is not a valid PNG; the PC clipboard was not changed")
 		}
-		if err := s.cfg.Clip.SetImagePNG(pending.data); err != nil {
-			return nil, &sendError{status: http.StatusInternalServerError, code: "clipboard", msg: "could not set the PC clipboard", internal: err}
+		huge := int64(cfg.Width)*int64(cfg.Height) > store.MaxImagePixels
+		if huge && mode == "clipboard" {
+			return nil, &sendError{status: http.StatusRequestEntityTooLarge, code: "too_many_pixels",
+				msg: "the image is larger than 50 megapixels; send it as a file"}
 		}
-		s.cfg.Clip.Notify("Image copied from phone", "Paste it with Ctrl+V")
-		return &sendResult{Kind: "image"}, nil
+		if !huge { // a huge PNG without an explicit mode is saved as a file below
+			if err := s.cfg.Clip.SetImagePNG(pending.data); err != nil {
+				return nil, &sendError{status: http.StatusInternalServerError, code: "clipboard", msg: "could not set the PC clipboard", internal: err}
+			}
+			s.cfg.Clip.Notify("Image copied from phone", "Paste it with Ctrl+V")
+			return &sendResult{Kind: "image"}, nil
+		}
 	}
 	if err := flushPending(); err != nil {
 		return nil, err

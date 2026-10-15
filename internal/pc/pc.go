@@ -21,6 +21,8 @@ import (
 	"golang.design/x/clipboard"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
+
+	"github.com/igalgerman/copyapp/internal/store"
 )
 
 // AppName is used for the autostart registry value and the received folder.
@@ -57,15 +59,23 @@ func (p *PC) SetText(s string) error {
 	return err
 }
 
+// ErrTooManyPixels is returned by SetImagePNG for images over
+// store.MaxImagePixels.
+var ErrTooManyPixels = errors.New("pc: image is larger than 50 megapixels")
+
 // SetImagePNG validates data as PNG and replaces the clipboard with it. On
-// invalid data the clipboard is left unchanged.
+// invalid or oversized data the clipboard is left unchanged.
 func (p *PC) SetImagePNG(data []byte) error {
-	if _, err := png.DecodeConfig(bytes.NewReader(data)); err != nil {
+	cfg, err := png.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
 		return ErrNotPNG
+	}
+	if int64(cfg.Width)*int64(cfg.Height) > store.MaxImagePixels {
+		return ErrTooManyPixels
 	}
 	c, cancel := ctx()
 	defer cancel()
-	_, err := clipboard.Write(c, clipboard.FmtImage, data)
+	_, err = clipboard.Write(c, clipboard.FmtImage, data)
 	return err
 }
 

@@ -4,6 +4,9 @@ package pc
 
 import (
 	"bytes"
+	"encoding/binary"
+	"errors"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/png"
@@ -109,5 +112,17 @@ func TestPSQuote(t *testing.T) {
 	// script itself has no interpolation of caller data.
 	if strings.Contains(toastScript, "%s") {
 		t.Fatal("toast script must not be formatted with caller data")
+	}
+}
+
+func TestSetImageRejectsHugePNG(t *testing.T) {
+	var b bytes.Buffer
+	png.Encode(&b, image.NewRGBA(image.Rect(0, 0, 2, 2)))
+	p := b.Bytes()
+	binary.BigEndian.PutUint32(p[16:], 10000)
+	binary.BigEndian.PutUint32(p[20:], 5001)
+	binary.BigEndian.PutUint32(p[29:], crc32.ChecksumIEEE(p[12:29]))
+	if err := (&PC{}).SetImagePNG(p); !errors.Is(err, ErrTooManyPixels) {
+		t.Fatalf("want ErrTooManyPixels, got %v", err)
 	}
 }
