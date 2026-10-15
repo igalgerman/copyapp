@@ -1,6 +1,7 @@
 package applog
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,5 +40,20 @@ func TestAppendsAcrossOpens(t *testing.T) {
 	w.Close()
 	if b, _ := os.ReadFile(p); string(b) != "one\ntwo\n" {
 		t.Fatalf("%q", b)
+	}
+}
+
+func TestControlCharactersCannotForgeLines(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x.log")
+	w, err := Open(path, DefaultMax)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := log.New(w, "", 0)
+	l.Printf("GET %s 404", "/a\n2026/01/01 fake line\r\x1b[31m")
+	w.Close()
+	b, _ := os.ReadFile(path)
+	if got := string(b); strings.Count(got, "\n") != 1 || !strings.HasSuffix(got, "404\n") || strings.ContainsAny(got, "\r\x1b") {
+		t.Fatalf("%q", got)
 	}
 }

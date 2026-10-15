@@ -39,7 +39,32 @@ func (w *Writer) open() error {
 	return nil
 }
 
+// clean replaces control characters (newlines inside a record included) with
+// '?', so a value logged from a request can never forge extra log lines.
+// The final newline of the record is kept.
+func clean(p []byte) []byte {
+	n := len(p)
+	if n > 0 && p[n-1] == '\n' {
+		n--
+	}
+	var out []byte
+	for i := 0; i < n; i++ {
+		if c := p[i]; c < 0x20 && c != '\t' || c == 0x7f {
+			if out == nil {
+				out = append([]byte(nil), p...)
+			}
+			out[i] = '?'
+		}
+	}
+	if out == nil {
+		return p
+	}
+	return out
+}
+
 func (w *Writer) Write(p []byte) (int, error) {
+	orig := len(p)
+	p = clean(p)
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.f != nil && w.size > 0 && w.size+int64(len(p)) > w.max {
@@ -58,6 +83,9 @@ func (w *Writer) Write(p []byte) (int, error) {
 	}
 	n, err := w.f.Write(p)
 	w.size += int64(n)
+	if err == nil {
+		n = orig
+	}
 	return n, err
 }
 

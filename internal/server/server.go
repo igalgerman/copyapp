@@ -13,7 +13,7 @@
 //	GET  /item/{id}              outbox item bytes
 //	POST /unpair                 drop the session
 //	GET  /pairing, /qr, /pairing/status, POST /pairing/open
-//	GET  /local/state, POST /local/{settings,choose-folder,open-folder,repair,uninstall}
+//	GET  /local/state, POST /local/{settings,choose-folder,open-folder,repair,uninstall,send-clipboard}
 //	                             PC-only control window (loopback source, localhost
 //	                             Host and the per-launch local secret; see
 //	                             Config.LocalSecret)
@@ -36,6 +36,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/igalgerman/copyapp/internal/auth"
@@ -81,8 +82,9 @@ type Config struct {
 	Logf func(format string, args ...any)
 	// LocalSecret authorizes the PC-only routes. Loopback is shared by every
 	// Windows user on the machine, so peer address alone is not enough: a
-	// request must carry it as the LocalCookieName cookie (set by opening
-	// /pairing?k=SECRET) or the X-CopyApp header. Empty denies those routes.
+	// request must carry it in the X-CopyApp header, or a browser session
+	// cookie (LocalCookieName: a random in-memory token, issued once
+	// /pairing?k=SECRET was opened). Empty denies those routes.
 	LocalSecret string
 	// WiFiName returns the SSID this PC is connected to ("" if unknown or
 	// wired); the pairing page names it so the phone joins the same network.
@@ -98,30 +100,50 @@ type Config struct {
 	SetAutostart func(on bool) error
 	LogPath      string
 	Hotkey       func() string // the active "send clipboard" shortcut
-	Version      string
+	// SendClipboard sends the PC clipboard to the phone (control window
+	// button); source names the trigger for the log. It returns "sent",
+	// "empty", "secret" or "failed".
+	SendClipboard func(source string) string
+	Version       string
+	// OnPaired runs after a phone paired (tray flash). Optional.
+	OnPaired func(ip string)
 }
 
-// LocalCookieName holds the local secret for the PC's own pairing page.
+// LocalCookieName holds the control window's browser session token.
 const LocalCookieName = "copyapp_local"
 
 type client struct {
 	ch   chan []byte
 	quit chan struct{}
+	seq  uint64 // subscription order
 }
+
+// maxClients caps open event streams; the oldest is closed to make room
+// (a phone that reloads leaves dead streams behind until they time out).
+const maxClients = 8
+
+// maxUploads caps concurrent uploads from the phone.
+const maxUploads = 2
 
 // Server is an http.Handler.
 type Server struct {
 	cfg     Config
 	handler http.Handler
 
-	mu        sync.Mutex
-	clients   map[*client]struct{}
-	pairToken string
-	openedAt  time.Time
-	pairedAt  time.Time
-	lastSeen  time.Time
+	mu         sync.Mutex
+	clients    map[*client]struct{}
+	clientSeq  uint64
+	pairToken  string
+	openedAt   time.Time
+	pairedAt   time.Time
+	pairedFrom string // phone address at pairing (this run)
+	lastSeen   time.Time
 
 	transfers transfers
+	uploads   atomic.Int32
+
+	localMu       sync.Mutex
+	localSessions map[string]time.Time // control-window cookie tokens -> last use
 
 	wifiMu   sync.Mutex
 	wifi     string
@@ -138,7 +160,7 @@ func New(cfg Config) *Server {
 	if cfg.BaseURL == nil {
 		cfg.BaseURL = func() string { return "https://localhost" }
 	}
-	s := &Server{cfg: cfg, clients: map[*client]struct{}{}}
+	s := &Server{cfg: cfg, clients: map[*client]struct{}{}, localSessions: map[string]time.Time{}}
 
 	static, err := fs.Sub(webFS, "web")
 	if err != nil {
@@ -164,6 +186,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("POST /local/open-folder", s.localOnly(localPost(s.localOpenFolder)))
 	mux.HandleFunc("POST /local/repair", s.localOnly(localPost(s.localRepair)))
 	mux.HandleFunc("POST /local/uninstall", s.localOnly(localPost(s.localUninstall)))
+	mux.HandleFunc("POST /local/send-clipboard", s.localOnly(localPost(s.localSendClipboard)))
 	s.handler = s.logged(securityHeaders(privateOnly(mux)))
 	return s
 }
@@ -233,7 +256,7 @@ func (s *Server) Unpair() {
 	s.cfg.Auth.Revoke()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.pairToken = ""
+	s.pairToken, s.pairedFrom = "", ""
 	for c := range s.clients {
 		close(c.quit)
 		delete(s.clients, c)
@@ -365,13 +388,61 @@ func isLocalHost(host string) bool {
 	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
-// LocalAuthorized reports whether r carries the local secret (cookie or
-// X-CopyApp header).
+// LocalAuthorized reports whether r carries the local secret in the
+// X-CopyApp header (scripts and the second-instance launcher; browsers cannot
+// send it cross-site).
 func LocalAuthorized(r *http.Request, key string) bool {
-	if c, err := r.Cookie(LocalCookieName); err == nil && secret.Equal(c.Value, key) {
-		return true
-	}
 	return secret.Equal(r.Header.Get("X-CopyApp"), key)
+}
+
+// localTTL is the sliding lifetime of a control-window browser session.
+const localTTL = 12 * time.Hour
+
+// newLocalSession issues a random token for the control window's cookie.
+// The long-lived local key itself never goes into a cookie: 127.0.0.1 cookies
+// are sent to every port, so another local program could otherwise collect
+// it. Tokens live in memory only (a restart logs every browser out).
+func (s *Server) newLocalSession() string {
+	var b [32]byte
+	rand.Read(b[:])
+	tok := base64.RawURLEncoding.EncodeToString(b[:])
+	s.localMu.Lock()
+	defer s.localMu.Unlock()
+	now := time.Now()
+	for t, seen := range s.localSessions {
+		if now.Sub(seen) > localTTL {
+			delete(s.localSessions, t)
+		}
+	}
+	if len(s.localSessions) >= 16 { // a handful of browsers at most
+		for t := range s.localSessions {
+			delete(s.localSessions, t)
+			break
+		}
+	}
+	s.localSessions[tok] = now
+	return tok
+}
+
+// localSessionValid checks and extends a control-window session.
+func (s *Server) localSessionValid(r *http.Request) bool {
+	c, err := r.Cookie(LocalCookieName)
+	if err != nil || c.Value == "" {
+		return false
+	}
+	s.localMu.Lock()
+	defer s.localMu.Unlock()
+	for tok, seen := range s.localSessions {
+		if secret.Equal(c.Value, tok) {
+			if time.Since(seen) > localTTL {
+				delete(s.localSessions, tok)
+				return false
+			}
+			s.localSessions[tok] = time.Now()
+			return true
+		}
+	}
+	return false
 }
 
 // localOnly allows only loopback peers that address us as localhost (the
@@ -391,14 +462,14 @@ func (s *Server) localOnly(h http.HandlerFunc) http.HandlerFunc {
 				return
 			}
 			http.SetCookie(w, &http.Cookie{
-				Name: LocalCookieName, Value: s.cfg.LocalSecret, Path: "/",
+				Name: LocalCookieName, Value: s.newLocalSession(), Path: "/",
 				HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode,
 			})
 			w.Header().Set("Cache-Control", "no-store")
 			http.Redirect(w, r, "/pairing", http.StatusSeeOther) // drop the key from the address bar
 			return
 		}
-		if !LocalAuthorized(r, s.cfg.LocalSecret) {
+		if s.cfg.LocalSecret == "" || !s.localSessionValid(r) && !LocalAuthorized(r, s.cfg.LocalSecret) {
 			jsonError(w, http.StatusForbidden, "forbidden", "open this page from the CopyApp tray menu")
 			return
 		}
@@ -461,10 +532,25 @@ func (s *Server) cookie(value string, maxAge int) *http.Cookie {
 	}
 }
 
-const pairFailHTML = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CopyApp</title><body style="font:16px system-ui;margin:2rem;max-width:30rem">
-<h1>Pairing link expired</h1><p>This code was already used or is older than 10 minutes.</p>
-<p>On your PC, open the CopyApp tray menu and choose <b>Pair phone</b> to get a new code.</p></body>`
+// pairFailHTML is shown on the phone, whose language the PC does not know:
+// the PC's language first, then the other two.
+func pairFailHTML() string {
+	var b strings.Builder
+	b.WriteString(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+		`<title>CopyApp</title><body style="font:16px system-ui;margin:2rem;max-width:30rem">`)
+	langs := []string{i18n.Lang()}
+	for _, l := range i18n.Langs {
+		if l != langs[0] {
+			langs = append(langs, l)
+		}
+	}
+	for _, l := range langs {
+		fmt.Fprintf(&b, `<section lang="%s" dir="%s" style="margin-bottom:2rem"><h1>%s</h1><p>%s</p></section>`,
+			l, i18n.Dir(l), i18n.In(l, "fail.title"), i18n.In(l, "fail.text")) // our own strings
+	}
+	b.WriteString(`</body>`)
+	return b.String()
+}
 
 func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
@@ -476,15 +562,25 @@ func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
 		s.cfg.Logf("pair: rejected token from %s", r.RemoteAddr)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
-		io.WriteString(w, pairFailHTML)
+		io.WriteString(w, pairFailHTML())
 		return
+	}
+	ip := "?"
+	if a, ok := remoteAddr(r); ok {
+		ip = a.String()
 	}
 	s.mu.Lock()
 	s.pairToken = ""
 	s.pairedAt = time.Now()
+	s.pairedFrom = ip
 	s.mu.Unlock()
-	http.SetCookie(w, s.cookie(sid, 400*24*3600))
-	s.cfg.Clip.Notify("CopyApp", i18n.T("toast.paired"))
+	http.SetCookie(w, s.cookie(sid, int(auth.SessionTTL/time.Second)))
+	// Always visible on the PC, so a pairing the user did not make stands out.
+	s.cfg.Logf("pair: phone paired from %s", ip)
+	s.cfg.Clip.Notify("CopyApp", i18n.T("toast.pairedFrom", ip))
+	if s.cfg.OnPaired != nil {
+		s.cfg.OnPaired(ip)
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -500,6 +596,10 @@ func (s *Server) caCert(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+	// The session slides: renew the cookie's lifetime with the server's.
+	if c, err := r.Cookie(CookieName); err == nil {
+		http.SetCookie(w, s.cookie(c.Value, int(auth.SessionTTL/time.Second)))
+	}
 	set := s.cfg.Settings.Get()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"paired": true, "fingerprint": fingerprint(s.cfg.CAPEM), "shortFingerprint": tlsutil.ShortFingerprint(s.cfg.CAPEM),
@@ -539,8 +639,19 @@ func sseMessage(it store.Item) []byte {
 }
 
 func (s *Server) subscribe() *client {
-	c := &client{ch: make(chan []byte, 16), quit: make(chan struct{})}
 	s.mu.Lock()
+	s.clientSeq++
+	c := &client{ch: make(chan []byte, 16), quit: make(chan struct{}), seq: s.clientSeq}
+	for len(s.clients) >= maxClients {
+		var oldest *client
+		for x := range s.clients {
+			if oldest == nil || x.seq < oldest.seq {
+				oldest = x
+			}
+		}
+		close(oldest.quit)
+		delete(s.clients, oldest)
+	}
 	s.clients[c] = struct{}{}
 	s.mu.Unlock()
 	return c

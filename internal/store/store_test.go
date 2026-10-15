@@ -158,3 +158,25 @@ func TestPathItemsDoNotCountAndKeepTheFile(t *testing.T) {
 		t.Fatal("missing file accepted")
 	}
 }
+
+func TestSaveMarksFromNetworkAndBlocksShellTypes(t *testing.T) {
+	dir := t.TempDir()
+	cases := map[string]string{
+		"report.pdf.lnk": "report.pdf.lnk.blocked", "x.URL": "x.URL.blocked", "a.scf": "a.scf.blocked",
+		"l.library-ms": "l.library-ms.blocked", "s.searchConnector-ms": "s.searchConnector-ms.blocked",
+		"desktop.ini": "desktop.ini.blocked", "photo.jpg": "photo.jpg", "w.website": "w.website.blocked",
+	}
+	for in, want := range cases {
+		p, err := SaveFile(dir, in, strings.NewReader("data"), 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if filepath.Base(p) != want {
+			t.Errorf("%s saved as %s, want %s", in, filepath.Base(p), want)
+		}
+		z, err := os.ReadFile(p + ":Zone.Identifier")
+		if err != nil || !strings.Contains(string(z), "ZoneId=3") {
+			t.Errorf("%s: no Mark of the Web: %v %q", in, err, z)
+		}
+	}
+}

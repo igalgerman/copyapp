@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/igalgerman/copyapp/internal/i18n"
@@ -46,6 +45,9 @@ type phoneState struct {
 	Paired    bool       `json:"paired"`
 	Connected bool       `json:"connected"` // an event stream is open right now
 	LastSeen  *time.Time `json:"lastSeen"`  // last authenticated request (this run)
+	// Where and when the current phone paired (this run; empty after a restart).
+	PairedFrom string     `json:"pairedFrom,omitempty"`
+	PairedAt   *time.Time `json:"pairedAt,omitempty"`
 }
 
 type localState struct {
@@ -69,6 +71,10 @@ func (s *Server) phone() phoneState {
 	if !s.lastSeen.IsZero() && p.Paired {
 		t := s.lastSeen
 		p.LastSeen = &t
+	}
+	if p.Paired && s.pairedFrom != "" {
+		t := s.pairedAt
+		p.PairedFrom, p.PairedAt = s.pairedFrom, &t
 	}
 	return p
 }
@@ -133,7 +139,7 @@ func (s *Server) localSettings(w http.ResponseWriter, r *http.Request) {
 	case req.Language != nil && !i18n.Valid(*req.Language),
 		req.ReceiveMode != nil && *req.ReceiveMode != settings.ModeClipboard && *req.ReceiveMode != settings.ModeFolder,
 		req.MaxBytes != nil && !settings.ValidSize(*req.MaxBytes),
-		req.SaveDir != nil && *req.SaveDir != "" && !filepath.IsAbs(*req.SaveDir):
+		req.SaveDir != nil && *req.SaveDir != "" && !settings.ValidSaveDir(*req.SaveDir):
 		jsonError(w, http.StatusBadRequest, "bad_value", "invalid setting")
 		return
 	}
@@ -188,6 +194,11 @@ func (s *Server) localChooseFolder(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "dialog", "could not open the folder picker")
 		return
 	}
+	if dir != "" && !settings.ValidSaveDir(dir) {
+		s.cfg.Logf("choose folder: refused a network, device or system folder")
+		jsonError(w, http.StatusBadRequest, "bad_folder", "choose a folder on this PC, outside Windows and Program Files")
+		return
+	}
 	changed := dir != "" && dir != cur
 	if changed {
 		if err := s.changeSettings(func(st *settings.Settings) { st.SaveDir = dir }); err != nil {
@@ -216,6 +227,16 @@ func (s *Server) localRepair(w http.ResponseWriter, r *http.Request) {
 	s.Unpair()
 	s.StartPairing()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// localSendClipboard sends the PC clipboard to the phone, like the hotkey
+// and the tray item. Reply: {"result":"sent"|"empty"|"secret"|"failed"}.
+func (s *Server) localSendClipboard(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.SendClipboard == nil {
+		jsonError(w, http.StatusNotImplemented, "unsupported", "not available")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"result": s.cfg.SendClipboard("window")})
 }
 
 // localUninstall starts the PC's uninstall flow (native confirmation first).

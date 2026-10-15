@@ -127,6 +127,12 @@ type sendResult struct {
 }
 
 func (s *Server) send(w http.ResponseWriter, r *http.Request) {
+	if s.uploads.Add(1) > maxUploads {
+		s.uploads.Add(-1)
+		s.sendDone(w, r, s.cfg.Settings.Get(), nil, &sendError{status: http.StatusTooManyRequests, code: "busy", msg: "two transfers are already running; wait for one to finish"})
+		return
+	}
+	defer s.uploads.Add(-1)
 	rc := http.NewResponseController(w)
 	_ = rc.SetReadDeadline(time.Now().Add(time.Hour)) // big uploads on slow Wi-Fi
 

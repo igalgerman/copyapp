@@ -220,3 +220,47 @@ func TestSettingsSaveFailureIsReported(t *testing.T) {
 		t.Fatalf("save failure not reported: %d %s", w.Code, w.Body)
 	}
 }
+
+func TestSaveDirRejectsNetworkDeviceAndSystemFolders(t *testing.T) {
+	e := newEnv(t, 0)
+	sys := os.Getenv("SystemRoot")
+	if sys == "" {
+		sys = `C:\Windows`
+	}
+	for _, bad := range []string{`\\server\share`, `\\?\C:\x`, `\\.\PhysicalDrive0`, `C:\x\NUL`, filepath.Join(sys, "Temp")} {
+		if w := e.do(localJSON(e, "POST", "/local/settings", `{"saveDir":`+jsonString(bad)+`}`)); w.Code != 400 {
+			t.Errorf("settings accepted %q: %d", bad, w.Code)
+		}
+		e.s.cfg.ChooseFolder = func(string) (string, error) { return bad, nil }
+		if w := e.do(local(e, "POST", "/local/choose-folder")); w.Code != 400 || !strings.Contains(w.Body.String(), "bad_folder") {
+			t.Errorf("picker accepted %q: %d %s", bad, w.Code, w.Body)
+		}
+		if got := e.s.cfg.Settings.Get().SaveDir; got != e.dir {
+			t.Fatalf("save folder changed to %q", got)
+		}
+	}
+}
+
+func TestSendClipboardButton(t *testing.T) {
+	e := newEnv(t, 0)
+	if w := e.do(local(e, "POST", "/local/send-clipboard")); w.Code != http.StatusNotImplemented {
+		t.Fatalf("without hook: %d", w.Code)
+	}
+	var sources []string
+	e.s.cfg.SendClipboard = func(src string) string { sources = append(sources, src); return "empty" }
+	w := e.do(local(e, "POST", "/local/send-clipboard"))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"result":"empty"`) || len(sources) != 1 || sources[0] != "window" {
+		t.Fatalf("%d %s %v", w.Code, w.Body, sources)
+	}
+	r := local(e, "POST", "/local/send-clipboard")
+	r.Header.Set("Origin", "http://evil.example")
+	if w := e.do(r); w.Code != 403 || len(sources) != 1 {
+		t.Fatalf("cross-origin: %d", w.Code)
+	}
+	if w := e.do(bareLocal(e, "POST", "/local/send-clipboard")); w.Code != 403 {
+		t.Fatalf("no secret: %d", w.Code)
+	}
+	if body := e.do(local(e, "GET", "/pairing")).Body.String(); !strings.Contains(body, `id="sendNow"`) {
+		t.Fatal("control window lacks the send button")
+	}
+}

@@ -792,7 +792,7 @@ func TestMinSec(t *testing.T) {
 // local is a request from this PC's own pairing page (holding the local cookie).
 func local(e *env, method, target string) *http.Request {
 	r := bareLocal(e, method, target)
-	r.AddCookie(&http.Cookie{Name: LocalCookieName, Value: testLocalKey})
+	r.AddCookie(&http.Cookie{Name: LocalCookieName, Value: e.s.newLocalSession()})
 	return r
 }
 
@@ -848,8 +848,26 @@ func TestPairingKeySetsLocalCookie(t *testing.T) {
 			c = x
 		}
 	}
-	if c == nil || c.Value != testLocalKey || !c.HttpOnly || c.SameSite != http.SameSiteStrictMode || c.Path != "/" {
+	if c == nil || c.Value == "" || strings.Contains(c.Value, testLocalKey) || !c.HttpOnly || c.SameSite != http.SameSiteStrictMode || c.Path != "/" {
 		t.Fatalf("local cookie: %+v", c)
+	}
+	// The cookie is a separate browser session, not the local key.
+	r0 := bareLocal(e, "GET", "/pairing/status")
+	r0.AddCookie(c)
+	if w := e.do(r0); w.Code != 200 {
+		t.Fatalf("session cookie refused: %d", w.Code)
+	}
+	r0 = bareLocal(e, "GET", "/pairing/status")
+	r0.AddCookie(&http.Cookie{Name: LocalCookieName, Value: testLocalKey})
+	if w := e.do(r0); w.Code != http.StatusForbidden {
+		t.Fatalf("raw key accepted as cookie: %d", w.Code)
+	}
+	// A restart (new server) forgets browser sessions.
+	e2 := newEnv(t, 0)
+	r0 = bareLocal(e2, "GET", "/pairing/status")
+	r0.AddCookie(c)
+	if w := e2.do(r0); w.Code != http.StatusForbidden {
+		t.Fatalf("old session survived restart: %d", w.Code)
 	}
 	// The same key from the LAN is useless.
 	r := e.req("GET", "/pairing?k="+testLocalKey, nil)

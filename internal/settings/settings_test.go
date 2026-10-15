@@ -60,6 +60,38 @@ func TestUpdatePersistsAndNormalizes(t *testing.T) {
 	}
 }
 
+func TestValidSaveDir(t *testing.T) {
+	sys := os.Getenv("SystemRoot")
+	if sys == "" {
+		sys = `C:\Windows`
+	}
+	for _, ok := range []string{`C:\Users\me\Downloads\CopyApp`, `D:\`, `d:\Phone stuff`, t.TempDir()} {
+		if !ValidSaveDir(ok) {
+			t.Errorf("refused %q", ok)
+		}
+	}
+	for _, bad := range []string{"", "relative", `\no-drive`, `\\server\share\x`, `\\?\C:\x`, `\\.\PhysicalDrive0`,
+		`C:\x\file.txt:stream`, `C:\x\NUL`, `C:\x\com1.txt`, sys, filepath.Join(sys, "System32"), "C:\\x\x00y",
+		filepath.Join(os.Getenv("APPDATA"), `Microsoft\Windows\Start Menu\Programs\Startup`),
+		filepath.Join(os.Getenv("ProgramData"), `Microsoft\Windows\Start Menu\Programs\StartUp`)} {
+		if ValidSaveDir(bad) {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}
+
+func TestTamperedFileFallsBack(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, FileName), []byte(`{"saveDir":"\\\\evil\\share","maxBytes":99999999999}`), 0o600)
+	st, err := Load(dir, `C:\def`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g := st.Get(); g.SaveDir != `C:\def` || g.MaxBytes != DefaultMaxBytes {
+		t.Fatalf("%+v", g)
+	}
+}
+
 func TestValidSize(t *testing.T) {
 	for _, v := range []int64{200 << 20, 500 << 20, 1 << 30, 2 << 30} {
 		if !ValidSize(v) {

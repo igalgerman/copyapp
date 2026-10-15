@@ -189,11 +189,24 @@ func ReceivedDir() string {
 }
 
 // OpenFolder creates path if needed and opens it in Explorer.
+// The path is passed to the shell as one string (no command line is built,
+// so commas or quotes in a folder name cannot become Explorer switches).
 func OpenFolder(path string) error {
+	if !filepath.IsAbs(path) || strings.ContainsAny(path, "\"\x00") {
+		return errors.New("pc: not an absolute folder path")
+	}
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return err
 	}
-	return exec.Command("explorer.exe", path).Start()
+	if fi, err := os.Stat(path); err != nil || !fi.IsDir() {
+		return errors.New("pc: not a folder")
+	}
+	verb, _ := windows.UTF16PtrFromString("open")
+	p, err := windows.UTF16PtrFromString(filepath.Clean(path))
+	if err != nil {
+		return err
+	}
+	return windows.ShellExecute(0, verb, p, nil, nil, windows.SW_SHOWNORMAL)
 }
 
 // LanIPs returns the machine's private, non-loopback IPv4 addresses, the one
@@ -245,6 +258,7 @@ var (
 )
 
 // SetAutostart adds or removes CopyApp (this exe) from HKCU\...\Run.
+// COPYAPP_NO_AUTOSTART_WRITE keeps the choice in memory only.
 func SetAutostart(on bool) error {
 	if noRunWrite {
 		fakeRun.Store(on)
@@ -266,7 +280,8 @@ func SetAutostart(on bool) error {
 	if err != nil {
 		return err
 	}
-	return k.SetStringValue(AppName, `"`+exe+`"`)
+	// --autostart: start quietly in the tray, without opening the window.
+	return k.SetStringValue(AppName, `"`+exe+`" --autostart`)
 }
 
 // AutostartEnabled reports whether the Run entry exists.
@@ -321,4 +336,17 @@ func decodeOEM(b []byte) string {
 		return string(b)
 	}
 	return string(utf16.Decode(w))
+}
+
+// AutorunFolders lists the Start menu and Startup folders (this user and all
+// users): received files must never land there.
+func AutorunFolders() []string {
+	var out []string
+	for _, id := range []*windows.KNOWNFOLDERID{windows.FOLDERID_Startup, windows.FOLDERID_CommonStartup,
+		windows.FOLDERID_StartMenu, windows.FOLDERID_CommonStartMenu, windows.FOLDERID_System, windows.FOLDERID_SystemX86} {
+		if d, err := windows.KnownFolderPath(id, 0); err == nil && d != "" {
+			out = append(out, d)
+		}
+	}
+	return out
 }

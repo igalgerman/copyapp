@@ -60,12 +60,73 @@ func (s *Settings) normalize(defSave string) {
 	if s.ReceiveMode != ModeFolder {
 		s.ReceiveMode = ModeClipboard
 	}
-	if strings.TrimSpace(s.SaveDir) == "" {
+	if strings.TrimSpace(s.SaveDir) == "" || s.SaveDir != defSave && !ValidSaveDir(s.SaveDir) {
 		s.SaveDir = defSave
 	}
 	if s.MaxBytes <= 0 {
 		s.MaxBytes = DefaultMaxBytes
 	}
+}
+
+// ValidSaveDir reports whether dir may hold files received from the phone:
+// an absolute path on a drive letter (no network share, no \\?\ or \\.\
+// device path, no alternate data stream), without reserved device names,
+// and not inside Windows or Program Files. A hand-edited settings file or a
+// picked folder that fails this falls back to the default folder.
+func ValidSaveDir(dir string) bool {
+	if dir == "" || strings.ContainsRune(dir, 0) || !filepath.IsAbs(dir) {
+		return false
+	}
+	c := filepath.Clean(dir)
+	vol := filepath.VolumeName(c)
+	if len(vol) != 2 || vol[1] != ':' || !(vol[0] >= 'A' && vol[0] <= 'Z' || vol[0] >= 'a' && vol[0] <= 'z') {
+		return false
+	}
+	rest := c[len(vol):]
+	if strings.ContainsAny(rest, `:*?"<>|`) {
+		return false
+	}
+	for _, part := range strings.Split(rest, `\`) {
+		if reservedName(part) {
+			return false
+		}
+	}
+	lc := strings.ToLower(c)
+	var denied []string
+	for _, env := range []string{"SystemRoot", "windir", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"} {
+		denied = append(denied, os.Getenv(env))
+	}
+	// Start menu folders, including Startup: files there run at sign-in.
+	for _, env := range []string{"APPDATA", "ProgramData", "ALLUSERSPROFILE"} {
+		if v := os.Getenv(env); v != "" {
+			denied = append(denied, filepath.Join(v, `Microsoft\Windows\Start Menu`))
+		}
+	}
+	denied = append(denied, ExtraDenied...)
+	for _, d := range denied {
+		sys := strings.ToLower(filepath.Clean(d))
+		if len(sys) > 3 && (lc == sys || strings.HasPrefix(lc, sys+`\`)) {
+			return false
+		}
+	}
+	return true
+}
+
+// ExtraDenied lists more folders ValidSaveDir refuses (and everything below
+// them); the Windows build adds the known Startup and Start menu folders, in
+// case they were moved away from their usual place.
+var ExtraDenied []string
+
+func reservedName(part string) bool {
+	stem := strings.ToUpper(strings.TrimRight(part, " ."))
+	if i := strings.IndexByte(stem, '.'); i >= 0 {
+		stem = stem[:i]
+	}
+	switch stem {
+	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
+		return true
+	}
+	return len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '0' && stem[3] <= '9'
 }
 
 // Store is a thread-safe settings holder that saves on every Update.
@@ -86,6 +147,9 @@ func Load(dir, defaultSaveDir string) (*Store, error) {
 	case err == nil:
 		var s Settings
 		if json.Unmarshal(b, &s) == nil {
+			if !ValidSize(s.MaxBytes) { // hand-edited: only the offered limits
+				s.MaxBytes = DefaultMaxBytes
+			}
 			st.s = s
 		}
 	case os.IsNotExist(err):

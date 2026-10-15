@@ -190,10 +190,41 @@ func SanitizeName(name string) string {
 	return name
 }
 
-// SaveFile copies r into dir under a sanitized, unique name. It reads at most
-// max bytes; on any error (including exceeding max) the partial file is removed.
-func SaveFile(dir, name string, r io.Reader, max int64) (path string, err error) {
+// shellTypes are file types Windows Explorer acts on when it merely shows
+// or opens a folder (shortcuts, internet shortcuts, shell command files,
+// library and search descriptors that can reach out to a network share).
+var shellTypes = map[string]bool{
+	".lnk": true, ".url": true, ".scf": true, ".library-ms": true, ".searchconnector-ms": true,
+	".appref-ms": true, ".settingcontent-ms": true, ".website": true, ".pif": true,
+}
+
+// SafeSaveName is SanitizeName plus: shell-parsed types get ".blocked"
+// appended and "desktop.ini" is renamed, so a received file can never act
+// as a shortcut or folder setting.
+func SafeSaveName(name string) string {
 	name = SanitizeName(name)
+	low := strings.ToLower(name)
+	if shellTypes[filepath.Ext(low)] || low == "desktop.ini" {
+		name += ".blocked"
+	}
+	return name
+}
+
+// zoneInternet is the Mark of the Web for files from another device:
+// SmartScreen, Office Protected View and "open file" warnings apply.
+const zoneInternet = "[ZoneTransfer]\r\nZoneId=3\r\n"
+
+// MarkFromNetwork writes the Zone.Identifier stream. On file systems without
+// alternate streams (FAT USB sticks) it fails quietly.
+func MarkFromNetwork(path string) error {
+	return os.WriteFile(path+":Zone.Identifier", []byte(zoneInternet), 0o644)
+}
+
+// SaveFile copies r into dir under a safe, unique name (see SafeSaveName)
+// and marks it as coming from the network. It reads at most max bytes; on any
+// error (including exceeding max) the partial file is removed.
+func SaveFile(dir, name string, r io.Reader, max int64) (path string, err error) {
+	name = SafeSaveName(name)
 	ext := filepath.Ext(name)
 	stem := strings.TrimSuffix(name, ext)
 	for i := 0; ; i++ {
@@ -220,6 +251,7 @@ func SaveFile(dir, name string, r io.Reader, max int64) (path string, err error)
 			os.Remove(p)
 			return "", e
 		}
+		MarkFromNetwork(p)
 		return p, nil
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The clipboard tests replace the user's clipboard, so they only run when
@@ -138,5 +139,40 @@ func TestDecodeOEM(t *testing.T) {
 	}
 	if got := decodeOEM([]byte("SSID : Home")); got != "SSID : Home" {
 		t.Fatalf("ascii: %q", got)
+	}
+}
+
+func TestShowSentOSD(t *testing.T) {
+	before := OSDCount()
+	ShowSent("✓ Sent to phone", false)
+	ShowSent("ignored while visible", false)
+	deadline := time.Now().Add(3 * time.Second)
+	for OSDCount() == before && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if OSDCount() == before && os.Getenv("CI") != "" {
+		t.Skip("no interactive desktop on this CI runner")
+	}
+	if OSDCount() != before+1 {
+		t.Fatalf("shown %d times", OSDCount()-before)
+	}
+	for osdBusy.Load() && time.Now().Before(deadline.Add(2*time.Second)) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if osdBusy.Load() {
+		t.Fatal("confirmation did not close by itself")
+	}
+}
+
+func TestOpenFolderRefusesOddPaths(t *testing.T) {
+	for _, bad := range []string{"relative", `C:\a"b`, "C:\\x\x00"} {
+		if err := OpenFolder(bad); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+	file := filepath.Join(t.TempDir(), "f.txt")
+	os.WriteFile(file, []byte("x"), 0o600)
+	if err := OpenFolder(file); err == nil {
+		t.Error("opened a file")
 	}
 }

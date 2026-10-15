@@ -180,11 +180,11 @@ func streamBody(t *testing.T, name string, src io.Reader, failAfter bool) (strin
 
 func TestHugeUploadStreamsToDisk(t *testing.T) {
 	if testing.Short() {
-		t.Skip("writes 250 MB")
+		t.Skip("writes 300 MB")
 	}
 	e := newEnv(t, 0) // default limit: 2 GiB
 	c := e.pair()
-	const size = 250 << 20
+	const size = 300 << 20
 	ct, body := streamBody(t, "huge.bin", &zeroReader{n: size}, false)
 	r := e.authed("POST", "/send", body, c)
 	r.Header.Set("Content-Type", ct)

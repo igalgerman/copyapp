@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,10 @@ import (
 // PairWindow is how long a pairing token stays valid.
 const PairWindow = 10 * time.Minute
 
+// SessionTTL is the sliding session lifetime: a phone that has not used
+// CopyApp for this long must pair again.
+const SessionTTL = 180 * 24 * time.Hour
+
 const secretLen = 32 // bytes; 256-bit
 
 type Auth struct {
@@ -24,7 +29,9 @@ type Auth struct {
 	token     string
 	openUntil time.Time
 	session   string
-	path      string // optional persistence file for the session
+	lastUsed  time.Time // last successful Valid (sliding expiry)
+	savedUse  time.Time // lastUsed as last written to path
+	path      string    // optional persistence file for the session
 	now       func() time.Time
 }
 
@@ -92,15 +99,30 @@ func (a *Auth) Exchange(token string) (string, bool) {
 	a.token = ""
 	a.openUntil = time.Time{}
 	a.session = randomHex()
+	a.lastUsed = a.now()
 	a.saveLocked()
 	return a.session, true
 }
 
-// Valid reports whether cookie is the current session id.
+// Valid reports whether cookie is the current session id. A session unused
+// for SessionTTL expires; each use extends it.
 func (a *Auth) Valid(cookie string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return eq(cookie, a.session)
+	if !eq(cookie, a.session) {
+		return false
+	}
+	now := a.now()
+	if !a.lastUsed.IsZero() && now.Sub(a.lastUsed) > SessionTTL {
+		a.session, a.lastUsed = "", time.Time{}
+		a.saveLocked()
+		return false
+	}
+	a.lastUsed = now
+	if now.Sub(a.savedUse) > time.Hour {
+		a.saveLocked()
+	}
+	return true
 }
 
 // Paired reports whether a session exists.
@@ -132,10 +154,26 @@ func (a *Auth) Persist(path string) error {
 	if err != nil {
 		return err
 	}
-	s := strings.TrimSpace(string(b))
-	if _, err := hex.DecodeString(s); err == nil && len(s) == 2*secretLen {
-		a.session = s
+	// "SESSION" (older versions) or "SESSION LAST-USED-UNIX".
+	f := strings.Fields(string(b))
+	if len(f) == 0 {
+		return nil
 	}
+	s := f[0]
+	if _, err := hex.DecodeString(s); err != nil || len(s) != 2*secretLen {
+		return nil
+	}
+	used := a.now()
+	if len(f) > 1 {
+		if u, err := strconv.ParseInt(f[1], 10, 64); err == nil && u > 0 {
+			used = time.Unix(u, 0)
+		}
+	}
+	if a.now().Sub(used) > SessionTTL {
+		a.saveLocked() // expired: forget it
+		return nil
+	}
+	a.session, a.lastUsed, a.savedUse = s, used, used
 	return nil
 }
 
@@ -151,7 +189,8 @@ func (a *Auth) saveLocked() {
 	if err != nil {
 		return
 	}
-	_, err = tmp.WriteString(a.session)
+	_, err = tmp.WriteString(a.session + " " + strconv.FormatInt(a.lastUsed.Unix(), 10))
+	a.savedUse = a.lastUsed
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}

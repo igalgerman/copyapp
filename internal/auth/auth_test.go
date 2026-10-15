@@ -164,3 +164,48 @@ func TestPairWindowIsTenMinutes(t *testing.T) {
 		t.Fatalf("PairWindow = %v, want 10m", PairWindow)
 	}
 }
+
+func TestSessionSlidingExpiry(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	a := New()
+	a.SetClock(func() time.Time { return now })
+	a.OpenPairing()
+	tok := a.OpenPairing()
+	sid, ok := a.Exchange(tok)
+	if !ok {
+		t.Fatal("exchange")
+	}
+	now = now.Add(SessionTTL - time.Hour)
+	if !a.Valid(sid) {
+		t.Fatal("expired too early")
+	}
+	now = now.Add(SessionTTL - time.Hour) // used recently: still valid
+	if !a.Valid(sid) {
+		t.Fatal("use did not extend the session")
+	}
+	now = now.Add(SessionTTL + time.Second)
+	if a.Valid(sid) || a.Paired() {
+		t.Fatal("idle session not expired")
+	}
+}
+
+func TestPersistedSessionExpires(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.json")
+	now := time.Unix(1_800_000_000, 0)
+	a := New()
+	a.SetClock(func() time.Time { return now })
+	a.Persist(path)
+	sid, _ := a.Exchange(a.OpenPairing())
+	b := New()
+	b.SetClock(func() time.Time { return now.Add(24 * time.Hour) })
+	b.Persist(path)
+	if !b.Valid(sid) {
+		t.Fatal("session lost across restart")
+	}
+	c := New()
+	c.SetClock(func() time.Time { return now.Add(SessionTTL + 48*time.Hour) })
+	c.Persist(path)
+	if c.Paired() {
+		t.Fatal("stale persisted session accepted")
+	}
+}
