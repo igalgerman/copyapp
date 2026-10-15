@@ -437,8 +437,13 @@
           return;
         }
         const code = res.code || (xhr.status === 413 ? 'too_large' : xhr.status === 401 ? 'unauthorized' : 'bad_request');
-        const [a, b] = errorText(code);
-        showResult(entry, false, a, b, code === 'unauthorized' || code === 'too_large' || code === 'too_many_pixels' || code === 'empty' ? null : retry);
+        let [a, b] = errorText(code);
+        const partial = Array.isArray(res.saved) && res.saved.length > 0;
+        if (partial) { // some files made it; say which, and don't resend them
+          a = 'Only some files were sent';
+          b = 'Saved on your PC: ' + res.saved.join(', ') + '. The rest failed: ' + b;
+        }
+        showResult(entry, false, a, b, partial || code === 'unauthorized' || code === 'too_large' || code === 'too_many_pixels' || code === 'empty' ? null : retry);
         toast('err', a, b);
         if (code === 'unauthorized') onUnauthorized(true);
         resolve(false);

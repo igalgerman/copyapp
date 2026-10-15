@@ -4,6 +4,7 @@ package main
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log"
 	"mime"
@@ -34,6 +35,11 @@ const (
 	defaultPort    = 8443
 	sendFilePath   = "/local/send-file"
 	sendToLinkName = "Phone (CopyApp).lnk"
+
+	// idleTimeout closes idle keep-alive connections. It does not cut active
+	// requests: SSE (/events) and big uploads/downloads run inside a handler
+	// and manage their own deadlines.
+	idleTimeout = 2 * time.Minute
 )
 
 var (
@@ -123,14 +129,14 @@ func main() {
 	})
 
 	go func() {
-		s := &http.Server{Handler: srv, ReadHeaderTimeout: 10 * time.Second, ErrorLog: log.Default()}
+		s := &http.Server{Handler: srv, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: idleTimeout, ErrorLog: log.Default()}
 		log.Printf("https: %v", s.Serve(tls.NewListener(httpsLn, tlsCfg)))
 	}()
 	go func() {
 		mux := http.NewServeMux()
 		mux.HandleFunc("POST "+sendFilePath, handleSendFile)
 		mux.Handle("/", srv)
-		s := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second, ErrorLog: log.Default()}
+		s := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: idleTimeout, ErrorLog: log.Default()}
 		log.Printf("loopback: %v", s.Serve(loopLn))
 	}()
 
@@ -259,7 +265,7 @@ func sendFile(path string) {
 		mt = "application/octet-stream"
 	}
 	if _, err := srv.Publish(store.Item{Kind: "file", Name: name, Mime: mt, Data: data}); err != nil {
-		machine.Notify("Not sent", err.Error())
+		machine.Notify("Not sent", publishErrText(err))
 		return
 	}
 	machine.Notify("Sent to phone", name)
@@ -282,7 +288,7 @@ func sendClipboard() {
 		return
 	}
 	if _, err := srv.Publish(it); err != nil {
-		machine.Notify("Not sent", err.Error())
+		machine.Notify("Not sent", publishErrText(err))
 		return
 	}
 	machine.Notify("Sent to phone", what+" from clipboard")
@@ -367,4 +373,11 @@ func createSendToShortcut() {
 	if err := cmd.Run(); err != nil {
 		log.Printf("sendto shortcut: %v", err)
 	}
+}
+
+func publishErrText(err error) string {
+	if errors.Is(err, store.ErrOutboxFull) {
+		return "400 MB is already waiting for the phone; try again in a few minutes"
+	}
+	return err.Error()
 }

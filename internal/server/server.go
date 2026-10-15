@@ -122,10 +122,10 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("GET /pair", s.pair)
 	mux.HandleFunc("GET /ca.crt", s.caCert)
 	mux.HandleFunc("GET /status", s.requireAuth(s.status))
-	mux.HandleFunc("POST /send", s.requireAuth(s.send))
+	mux.HandleFunc("POST /send", sameSite(s.requireAuth(s.send)))
 	mux.HandleFunc("GET /events", s.requireAuth(s.events))
 	mux.HandleFunc("GET /item/{id}", s.requireAuth(s.item))
-	mux.HandleFunc("POST /unpair", s.requireAuth(s.unpair))
+	mux.HandleFunc("POST /unpair", sameSite(s.requireAuth(s.unpair)))
 	mux.HandleFunc("GET /pairing", s.localOnly(s.pairingPage))
 	mux.HandleFunc("GET /pairing/status", s.localOnly(s.pairingStatus))
 	mux.HandleFunc("POST /pairing/open", s.localOnly(s.pairingOpen))
@@ -285,6 +285,21 @@ func (s *Server) requireAuth(h http.HandlerFunc) http.HandlerFunc {
 				return
 			}
 			jsonError(w, http.StatusUnauthorized, "unauthorized", "not paired: scan the QR code on your PC")
+			return
+		}
+		h(w, r)
+	}
+}
+
+// sameSite rejects state-changing requests that browsers mark as cross-site
+// (defense in depth on top of the SameSite=Strict cookie). Clients that send
+// neither header (scripts, old browsers) and opaque "null" origins pass; the
+// cookie still has to be valid.
+func sameSite(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		o := r.Header.Get("Origin")
+		if r.Header.Get("Sec-Fetch-Site") == "cross-site" || (o != "" && o != "null" && o != "https://"+r.Host) {
+			jsonError(w, http.StatusForbidden, "forbidden", "cross-site request")
 			return
 		}
 		h(w, r)
@@ -542,7 +557,11 @@ func (s *Server) sendDone(w http.ResponseWriter, r *http.Request, res *sendResul
 			http.Redirect(w, r, "/?error="+se.code, http.StatusSeeOther)
 			return
 		}
-		jsonError(w, se.status, se.code, se.msg)
+		reply := map[string]any{"error": se.msg, "code": se.code}
+		if res != nil && len(res.Saved) > 0 {
+			reply["saved"] = res.Saved // partial success: these files are on the PC
+		}
+		writeJSON(w, se.status, reply)
 		return
 	}
 	if isNavigate(r) { // Android share target posts as a navigation
@@ -581,16 +600,9 @@ func (s *Server) setText(t string) (*sendResult, error) {
 	if err := s.cfg.Clip.SetText(t); err != nil {
 		return nil, &sendError{status: http.StatusInternalServerError, code: "clipboard", msg: "could not set the PC clipboard", internal: err}
 	}
-	s.cfg.Clip.Notify("Copied from phone", preview(t))
+	// Never show the text itself: toasts appear on the lock screen and in history.
+	s.cfg.Clip.Notify("Copied from phone", fmt.Sprintf("Text received from phone (%d chars)", utf8.RuneCountInString(t)))
 	return &sendResult{Kind: "text"}, nil
-}
-
-func preview(t string) string {
-	t = strings.Join(strings.Fields(t), " ")
-	if r := []rune(t); len(r) > 80 {
-		t = string(r[:79]) + "…"
-	}
-	return t
 }
 
 var extByMime = map[string]string{
@@ -609,7 +621,9 @@ type pendingPNG struct {
 // "text", "title", "url", and one or more files in "file" or "files".
 // Without mode, a single image/png file goes to the clipboard and everything
 // else is saved to SaveDir.
-func (s *Server) sendMultipart(r *http.Request) (*sendResult, error) {
+// On failure after some files were saved, the result lists them alongside the
+// error.
+func (s *Server) sendMultipart(r *http.Request) (res *sendResult, err error) {
 	mr, err := r.MultipartReader()
 	if err != nil {
 		return nil, badRequest("bad_request", "invalid multipart body")
@@ -621,6 +635,12 @@ func (s *Server) sendMultipart(r *http.Request) (*sendResult, error) {
 		pending              *pendingPNG
 		nFiles               int
 	)
+	defer func() {
+		if err != nil && len(saved) > 0 {
+			res = &sendResult{Kind: "file", Saved: saved}
+			s.cfg.Clip.Notify("Partly saved from phone", fmt.Sprintf("%d saved, the rest failed", len(saved)))
+		}
+	}()
 	readBytes := func(p io.Reader) ([]byte, error) {
 		b, err := io.ReadAll(io.LimitReader(p, s.cfg.MaxBytes+1))
 		if err != nil {

@@ -889,3 +889,73 @@ func TestHugePNGNotPutOnClipboard(t *testing.T) {
 		t.Fatalf("50 MP: %d %s", w.Code, w.Body)
 	}
 }
+
+func TestCrossSiteSendAndUnpairRejected(t *testing.T) {
+	e := newEnv(t, 0)
+	c := e.pair()
+	for _, h := range []map[string]string{
+		{"Sec-Fetch-Site": "cross-site"},
+		{"Origin": "https://evil.example"},
+		{"Origin": "https://192.168.1.5:9999"}, // another port on the PC
+	} {
+		for _, path := range []string{"/send", "/unpair"} {
+			r := e.authed("POST", path, strings.NewReader(`{"text":"x"}`), c)
+			r.Header.Set("Content-Type", "application/json")
+			for k, v := range h {
+				r.Header.Set(k, v)
+			}
+			if w := e.do(r); w.Code != http.StatusForbidden {
+				t.Errorf("%s with %v: %d", path, h, w.Code)
+			}
+		}
+	}
+	if n, _ := e.clip.calls(); n != 0 || !e.a.Paired() {
+		t.Fatal("cross-site request had an effect")
+	}
+	// Same-origin, user-initiated (none) and header-less clients still work.
+	for _, h := range []map[string]string{
+		{"Sec-Fetch-Site": "same-origin", "Origin": "https://192.168.1.5:8443"},
+		{"Sec-Fetch-Site": "none"},
+		{},
+	} {
+		r := e.authed("POST", "https://192.168.1.5:8443/send", strings.NewReader(`{"text":"x"}`), c)
+		r.Header.Set("Content-Type", "application/json")
+		for k, v := range h {
+			r.Header.Set(k, v)
+		}
+		if w := e.do(r); w.Code != http.StatusOK {
+			t.Errorf("send with %v: %d %s", h, w.Code, w.Body)
+		}
+	}
+}
+
+func TestTextToastHasNoPreview(t *testing.T) {
+	e := newEnv(t, 0)
+	c := e.pair()
+	e.sendJSON(c, map[string]string{"text": "hunter2 secret"})
+	e.clip.mu.Lock()
+	defer e.clip.mu.Unlock()
+	last := e.clip.notes[len(e.clip.notes)-1]
+	if strings.Contains(last, "hunter2") || !strings.Contains(last, "Text received from phone (14 chars)") {
+		t.Fatalf("toast: %q", last)
+	}
+}
+
+func TestMultiFilePartialFailureReportsSaved(t *testing.T) {
+	e := newEnv(t, 10)
+	c := e.pair()
+	w := e.sendMultipart(c,
+		part{field: "files", filename: "a.txt", ctype: "text/plain", data: []byte("small"), isFile: true},
+		part{field: "files", filename: "b.txt", ctype: "text/plain", data: []byte("this one is too large"), isFile: true})
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	var res struct {
+		Code  string   `json:"code"`
+		Saved []string `json:"saved"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &res)
+	if res.Code != "too_large" || len(res.Saved) != 1 || res.Saved[0] != "a.txt" {
+		t.Fatalf("reply must list the saved file: %s", w.Body)
+	}
+}
