@@ -1,0 +1,284 @@
+// Package tlsutil creates and persists a small private CA and a leaf
+// certificate for the LAN HTTPS server.
+//
+// The CA is installed once on the phone. It is name-constrained to private
+// IP ranges and the copyapp.local/localhost names, so even if its key leaked
+// it could not be used to impersonate public sites. The leaf is regenerated
+// whenever the machine's LAN IPs change; the CA is kept so the phone does not
+// have to re-install it.
+package tlsutil
+
+import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"errors"
+	"fmt"
+	"math/big"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+const (
+	caCertFile   = "ca.crt"
+	caKeyFile    = "ca.key"
+	leafCertFile = "leaf.crt"
+	leafKeyFile  = "leaf.key"
+
+	// DNSName is the host name included in the leaf certificate.
+	DNSName = "copyapp.local"
+
+	caValidity   = 5 * 365 * 24 * time.Hour
+	leafValidity = 365 * 24 * time.Hour
+	renewBefore  = 30 * 24 * time.Hour
+)
+
+// permittedNets are the IP ranges the CA may issue for.
+var permittedNets = mustCIDRs(
+	"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", // RFC 1918
+	"127.0.0.0/8", "169.254.0.0/16", // loopback, link-local
+	"::1/128", "fc00::/7", "fe80::/10",
+)
+
+var permittedDNS = []string{DNSName, "localhost"}
+
+func mustCIDRs(ss ...string) []*net.IPNet {
+	out := make([]*net.IPNet, 0, len(ss))
+	for _, s := range ss {
+		_, n, err := net.ParseCIDR(s)
+		if err != nil {
+			panic(err)
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
+// Load returns a TLS config serving a leaf certificate for ips (plus
+// 127.0.0.1, localhost and copyapp.local), and the CA certificate in PEM form
+// for installing on the phone. Keys and certificates are stored in dir with
+// mode 0600; they are created on first use.
+func Load(dir string, ips []net.IP) (*tls.Config, []byte, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, nil, err
+	}
+	caCert, caKey, err := loadOrCreateCA(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	want := append([]net.IP{net.IPv4(127, 0, 0, 1)}, ips...)
+	leaf, err := loadLeaf(dir, caCert, want)
+	if err != nil {
+		leaf, err = createLeaf(dir, caCert, caKey, want)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCert.Raw})
+	cfg := &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{leaf},
+	}
+	return cfg, caPEM, nil
+}
+
+// Fingerprint returns the SHA-256 fingerprint of the first certificate in
+// certPEM as colon-separated upper-case hex (as shown by Android settings).
+func Fingerprint(certPEM []byte) string {
+	b, _ := pem.Decode(certPEM)
+	if b == nil {
+		return ""
+	}
+	sum := sha256.Sum256(b.Bytes)
+	parts := make([]string, len(sum))
+	for i, x := range sum {
+		parts[i] = fmt.Sprintf("%02X", x)
+	}
+	return strings.Join(parts, ":")
+}
+
+func loadOrCreateCA(dir string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
+	cp, kp := filepath.Join(dir, caCertFile), filepath.Join(dir, caKeyFile)
+	_, e1 := os.Stat(cp)
+	_, e2 := os.Stat(kp)
+	if e1 == nil && e2 == nil {
+		// Do not silently replace a damaged CA: the phone trusts it.
+		return readPair(cp, kp)
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	now := time.Now()
+	tmpl := &x509.Certificate{
+		SerialNumber:                serial(),
+		Subject:                     pkix.Name{CommonName: "CopyApp Local CA", Organization: []string{"CopyApp"}},
+		NotBefore:                   now.Add(-time.Hour),
+		NotAfter:                    now.Add(caValidity),
+		IsCA:                        true,
+		BasicConstraintsValid:       true,
+		MaxPathLenZero:              true,
+		KeyUsage:                    x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
+		PermittedDNSDomainsCritical: true,
+		PermittedDNSDomains:         permittedDNS,
+		PermittedIPRanges:           permittedNets,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := writePair(cp, kp, der, key); err != nil {
+		return nil, nil, err
+	}
+	// A new CA invalidates any old leaf.
+	os.Remove(filepath.Join(dir, leafCertFile))
+	os.Remove(filepath.Join(dir, leafKeyFile))
+	c, err := x509.ParseCertificate(der)
+	return c, key, err
+}
+
+// loadLeaf returns the stored leaf if it is signed by ca, covers every IP in
+// want, and is not close to expiry.
+func loadLeaf(dir string, ca *x509.Certificate, want []net.IP) (tls.Certificate, error) {
+	cp, kp := filepath.Join(dir, leafCertFile), filepath.Join(dir, leafKeyFile)
+	c, key, err := readPair(cp, kp)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	if err := c.CheckSignatureFrom(ca); err != nil {
+		return tls.Certificate{}, err
+	}
+	if time.Until(c.NotAfter) < renewBefore {
+		return tls.Certificate{}, errors.New("leaf expiring")
+	}
+	for _, ip := range want {
+		found := false
+		for _, have := range c.IPAddresses {
+			if have.Equal(ip) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return tls.Certificate{}, errors.New("leaf missing IP")
+		}
+	}
+	return tls.Certificate{Certificate: [][]byte{c.Raw}, PrivateKey: key, Leaf: c}, nil
+}
+
+func createLeaf(dir string, ca *x509.Certificate, caKey *ecdsa.PrivateKey, ips []net.IP) (tls.Certificate, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	var sans []net.IP
+	for _, ip := range ips {
+		dup := false
+		for _, s := range sans {
+			dup = dup || s.Equal(ip)
+		}
+		if !dup && ip != nil {
+			sans = append(sans, ip)
+		}
+	}
+	now := time.Now()
+	tmpl := &x509.Certificate{
+		SerialNumber: serial(),
+		Subject:      pkix.Name{CommonName: DNSName},
+		NotBefore:    now.Add(-time.Hour),
+		NotAfter:     now.Add(leafValidity),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:     permittedDNS,
+		IPAddresses:  sans,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca, &key.PublicKey, caKey)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	if err := writePair(filepath.Join(dir, leafCertFile), filepath.Join(dir, leafKeyFile), der, key); err != nil {
+		return tls.Certificate{}, err
+	}
+	c, err := x509.ParseCertificate(der)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: c}, nil
+}
+
+func serial() *big.Int {
+	n, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 127))
+	if err != nil {
+		panic(err)
+	}
+	return n.Add(n, big.NewInt(1))
+}
+
+func readPair(certPath, keyPath string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
+	cb, err := os.ReadFile(certPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	kb, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	cblk, _ := pem.Decode(cb)
+	kblk, _ := pem.Decode(kb)
+	if cblk == nil || kblk == nil {
+		return nil, nil, fmt.Errorf("tlsutil: bad PEM in %s or %s", certPath, keyPath)
+	}
+	c, err := x509.ParseCertificate(cblk.Bytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	k, err := x509.ParseECPrivateKey(kblk.Bytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	pub, ok := c.PublicKey.(*ecdsa.PublicKey)
+	if !ok || !pub.Equal(&k.PublicKey) {
+		return nil, nil, fmt.Errorf("tlsutil: key does not match %s", certPath)
+	}
+	return c, k, nil
+}
+
+func writePair(certPath, keyPath string, der []byte, key *ecdsa.PrivateKey) error {
+	kder, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return err
+	}
+	if err := writeFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: kder})); err != nil {
+		return err
+	}
+	return writeFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
+
+// writeFile writes atomically. os.CreateTemp creates the file with mode 0600
+// (on Windows the per-user %APPDATA% ACL protects it instead).
+func writeFile(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	_, werr := tmp.Write(data)
+	if cerr := tmp.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr == nil {
+		werr = os.Rename(name, path)
+	}
+	if werr != nil {
+		os.Remove(name)
+	}
+	return werr
+}
