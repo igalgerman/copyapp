@@ -18,21 +18,26 @@ https://github.com/igalgerman/copyapp/releases/latest
 
 ---
 
-## Install
+## Install (3 steps)
 
-1. **Run `copyapp.exe`** on your PC. A CopyApp icon appears in the tray (near the clock).
-2. **Windows may show "Windows protected your PC".** This is normal for a new app. Click **More info**, then click **Run anyway**.
-   - If you see a **firewall prompt**, click **Allow** on **private networks**.
-3. **Scan the QR code** that appears on your PC with your phone's camera. This opens CopyApp on your phone and pairs it with your PC.
-4. **On the phone**, follow the **4-step one-time certificate install** shown on the screen. Then tap **Add to Home screen**.
+1. **Download and run `copyapp.exe`** on your PC. A pairing page with a QR code opens, and a CopyApp icon appears in the tray (near the clock).
+2. **Scan the QR code** with your phone's camera and open the link.
+3. **If the browser says the connection is not private, tap Advanced → Proceed.** This is expected: the PC is on your own Wi-Fi.
+
+That's it. CopyApp is now open in your phone's browser, ready to send and receive. Tip: bookmark the page or choose **Add to Home screen** in Chrome's ⋮ menu.
+
+> The first time only, Windows may show **"Windows protected your PC"** (click **More info → Run anyway**) and a **firewall prompt** (click **Allow** on private networks). Both are one-time.
+
+### Optional: make it a real app (about 1 minute)
+
+Want CopyApp in Android's **Share** menu and no "Not secure" warning? On the phone, open **⋯ → Make it a real app** and follow the steps: check the code matches the one on your PC's pairing page, download the certificate, install it once in Android Settings, then choose **Install app** in Chrome's ⋮ menu.
 
 ---
-
 ## How to use it
 
 **Phone to PC**
-- Use the Android **Share** menu on a text, image, or file, and choose **CopyApp**.
-- Or open CopyApp on your phone and tap **Send clipboard**.
+- Open CopyApp on your phone and tap **Send clipboard**, **Photo** or **File**. (If the browser won't share the clipboard, a text box opens: paste there and tap Send.)
+- After the optional upgrade: use the Android **Share** menu on a text, image, or file, and choose **CopyApp**.
 
 **PC to phone**
 - Press **Ctrl+Alt+C** to send what is on your PC clipboard to your phone.
@@ -67,7 +72,7 @@ https://github.com/igalgerman/copyapp/releases/latest
 - **Can't connect?** Make sure your PC and phone are on the **same Wi-Fi**.
 - **Can't connect on a guest Wi-Fi?** Guest networks often block devices from talking to each other. Use your main Wi-Fi instead.
 - **Still can't connect?** Check that your **firewall** allows CopyApp on private networks.
-- **Your PC's IP address changed?** You don't need to do anything. CopyApp keeps working.
+- **Your PC's IP address changed?** Choose **Pair phone** in the tray menu and scan the QR code again.
 - **Phone not working after a change?** Right-click the tray icon, choose **Re-pair phone**, and scan the new QR code.
 
 ---
