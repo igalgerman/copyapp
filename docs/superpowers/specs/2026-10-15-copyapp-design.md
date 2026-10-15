@@ -34,7 +34,7 @@ Simple, lightweight, little code, trivial install, good security, seamless as po
 
 ## Security
 - TLS, self-signed cert generated on first run; SHA-256 fingerprint included in the QR payload/UI for verification.
-- Pairing: QR holds `https://copyapp.local:PORT/pair#<256-bit token>` (also IP fallback). Token exchanged once for a session cookie (HttpOnly, Secure, SameSite=Strict). Pairing only open for 2 minutes after the user opens "Pair"; token single-use. "Re-pair" rotates secrets and invalidates the session.
+- Pairing: QR holds `https://copyapp.local:PORT/pair#<256-bit token>` (also IP fallback). Token exchanged once for a session cookie (HttpOnly, Secure, SameSite=Strict). Pairing only open for 10 minutes after the user opens "Pair" (was 2; real users needed time to fix Wi-Fi/mobile data); token single-use. "Re-pair" rotates secrets and invalidates the session.
 - All endpoints require the session cookie. Reject non-private source IPs. Rate limiting, request size caps, sanitized filenames (no path traversal, no overwrite), no UPnP/inbound internet exposure.
 - Windows firewall prompt (private networks) accepted once.
 

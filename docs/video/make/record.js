@@ -51,7 +51,7 @@ async function ctxPair(browser) { // pairs a phone like the camera would, return
   const resp = await c.request.get(r.data); if (!resp.ok()) throw new Error('pair failed ' + resp.status());
   const st = await c.storageState(); await c.close(); return st;
 }
-async function openPairing() { // same as tray "Pair phone": opens a fresh 2-minute window
+async function openPairing() { // same as tray "Pair phone": opens a fresh 10-minute window
   await fetch(`${L}/pairing/open`, { method: 'POST', headers: { Origin: L, ...LH } });
 }
 let BASE = "";

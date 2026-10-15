@@ -20,9 +20,10 @@ func TestTokenSingleUse(t *testing.T) {
 
 func TestTokenExpires(t *testing.T) {
 	a := New()
-	a.now = func() time.Time { return time.Now().Add(3 * time.Minute) }
+	base := time.Now()
+	a.now = func() time.Time { return base }
 	tok := a.OpenPairing()
-	a.now = func() time.Time { return time.Now().Add(6 * time.Minute) }
+	a.now = func() time.Time { return base.Add(PairWindow + time.Second) }
 	if _, ok := a.Exchange(tok); ok {
 		t.Fatal("expired token accepted")
 	}
@@ -154,5 +155,12 @@ func TestPersist(t *testing.T) {
 	cc.Persist(p)
 	if cc.Valid(c) {
 		t.Fatal("revoked session restored")
+	}
+}
+
+// Real users need time to switch Wi-Fi / mobile data before scanning.
+func TestPairWindowIsTenMinutes(t *testing.T) {
+	if PairWindow != 10*time.Minute {
+		t.Fatalf("PairWindow = %v, want 10m", PairWindow)
 	}
 }

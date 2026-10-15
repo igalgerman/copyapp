@@ -15,7 +15,7 @@ import (
 )
 
 // PairWindow is how long a pairing token stays valid.
-const PairWindow = 2 * time.Minute
+const PairWindow = 10 * time.Minute
 
 const secretLen = 32 // bytes; 256-bit
 
