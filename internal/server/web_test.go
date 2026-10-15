@@ -35,6 +35,17 @@ func TestI18nJS(t *testing.T) {
 	}
 }
 
+func TestPhoneTransferJS(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not installed")
+	}
+	out, err := exec.Command(node, "testdata/phone_test.mjs", "web/app.js").CombinedOutput()
+	if err != nil {
+		t.Fatalf("phone transfer checks failed: %v\n%s", err, out)
+	}
+}
+
 // The page loads its strings from i18n.js before app.js (CSP: script-src 'self').
 func TestIndexLoadsI18nFirst(t *testing.T) {
 	b, err := os.ReadFile("web/index.html")

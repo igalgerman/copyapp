@@ -2,7 +2,9 @@
 (() => {
   'use strict';
 
-  const MAX_BYTES = 200 * 1024 * 1024;
+  // The PC's per-transfer limit; /status reports the real one (maxBytes).
+  let maxBytes = 2 * 1024 ** 3;
+  let receiveMode = ''; // the PC's own setting for incoming items: clipboard | folder
   const EXPIRY_MS = 10 * 60 * 1000;
   const T = I18N.t;
 
@@ -104,7 +106,46 @@
   // Server and local error codes -> [title, detail] messages (err.<code>.t/.d in i18n.js).
   function errorText(code) {
     const c = I18N.has('err.' + code + '.t') ? code : 'bad_request';
-    return [['err.' + c + '.t'], ['err.' + c + '.d']];
+    const vars = c === 'too_large' ? { limit: fmtSize(maxBytes) } : undefined;
+    return [['err.' + c + '.t'], ['err.' + c + '.d', vars]];
+  }
+
+  // ---------- preferences (this phone only, localStorage) ----------
+  // dest:   where things sent from here land on the PC (auto follows the PC's setting)
+  // rxText: what to do when text arrives from the PC
+  // rxFile: what to do when a file arrives from the PC
+  const prefs = {
+    dest: { key: 'copyapp.dest', def: 'auto', ok: /^(auto|clipboard|file)$/, inputs: 'dest-dock dest-paste' },
+    rxText: { key: 'copyapp.rxText', def: 'show', ok: /^(show|copy)$/, inputs: 'rx-text' },
+    rxFile: { key: 'copyapp.rxFile', def: 'show', ok: /^(show|download)$/, inputs: 'rx-file' },
+  };
+  function pref(name) {
+    const p = prefs[name];
+    const v = store.get(p.key);
+    return v && p.ok.test(v) ? v : p.def;
+  }
+  function radiosOf(name) {
+    const out = [];
+    for (const g of prefs[name].inputs.split(' ')) out.push(...document.querySelectorAll('input[name="' + g + '"]'));
+    return out;
+  }
+  function syncPref(name) {
+    const v = pref(name);
+    for (const r of radiosOf(name)) r.checked = r.value === v;
+  }
+  for (const name of Object.keys(prefs)) {
+    syncPref(name);
+    for (const r of radiosOf(name)) {
+      r.addEventListener('change', () => {
+        if (!r.checked) return;
+        store.set(prefs[name].key, r.value);
+        syncPref(name);
+      });
+    }
+  }
+  function showPcMode() {
+    const m = receiveMode === 'clipboard' ? 'pcMode.clipboard' : (receiveMode === 'folder' || receiveMode === 'file') ? 'pcMode.folder' : 'pcMode.unknown';
+    setMsg($('#pcmode-chip'), [m]);
   }
 
   // ---------- views ----------
@@ -232,10 +273,11 @@
       img.addEventListener('load', () => { if (nearBottom()) scrollToEnd(false); }, { once: true });
       img.addEventListener('error', () => img.replaceWith(el('div', { class: 'thumb-missing' }, icon('photo'))), { once: true });
       card.append(img);
+      if (item.size > 0) card.append(el('p', { class: 'file-sub card-size', text: fmtSize(item.size), 'data-size': item.size }));
       const copy = el('button', { type: 'button', class: 'btn btn-primary' }, icon('copy'), el('span', { msg: ['copyImage'] }));
       copy.addEventListener('click', () => copyImage(item, copy));
       const dl = el('a', { class: 'btn btn-quiet', href: url, download: item.name || 'image.png' }, icon('download'), el('span', { msg: ['save'] }));
-      dl.addEventListener('click', () => { toast('ok', ['toast.saving'], ['toast.inDownloads']); noteSuccess(); });
+      dl.addEventListener('click', (e) => downloadItem(e, item, node, dl));
       card.append(el('div', { class: 'card-actions' }, copy, dl));
     } else {
       const name = item.name || T('dock.file');
@@ -243,7 +285,7 @@
         el('span', { class: 'file-tile', 'aria-hidden': 'true', text: extOf(name, item.mime) }),
         el('div', {}, el('div', { class: 'file-name' }, el('bdi', { text: name })), el('div', { class: 'file-sub', text: fmtSize(item.size), 'data-size': item.size }))));
       const dl = el('a', { class: 'btn btn-primary', href: url, download: name }, icon('download'), el('span', { msg: ['download'] }));
-      dl.addEventListener('click', () => { toast('ok', ['toast.downloading', { name }], ['toast.inDownloads']); noteSuccess(); });
+      dl.addEventListener('click', (e) => downloadItem(e, item, node, dl));
       card.append(el('div', { class: 'card-actions' }, dl));
     }
 
@@ -255,6 +297,9 @@
     received.set(item.id, { item, node });
     markExpired(item, node);
     updateEmpty();
+    // New to this page (not the backlog shown on first connect): apply the
+    // phone's receive settings. A reconnect only replays items we haven't seen.
+    if (initialSyncDone) autoHandle(item, node);
     if (live) {
       buzz(12);
       if (stick || node === feed.lastElementChild) scrollToEnd(true);
@@ -354,12 +399,135 @@
     }
   }
 
+  // ---------- receive settings: copy / download automatically ----------
+  // Browsers only allow this while the page is visible, so items wait in a
+  // queue until it is. Any refusal falls back quietly to the card's buttons.
+  let initialSyncDone = false;
+  const autoQueue = [];
+  function autoHandle(item, node) {
+    if (Date.now() - item.t >= EXPIRY_MS) return;
+    const wantCopy = item.kind === 'text' && pref('rxText') === 'copy';
+    const wantSave = (item.kind === 'file' || item.kind === 'image') && pref('rxFile') === 'download';
+    if (!wantCopy && !wantSave) return;
+    autoQueue.push({ item, node });
+    runAuto();
+  }
+  function runAuto() {
+    if (document.visibilityState !== 'visible' || !autoQueue.length) return;
+    const jobs = autoQueue.splice(0).filter((j) => Date.now() - j.item.t < EXPIRY_MS && j.node.isConnected);
+    let text = null; // only the newest text is worth copying
+    for (const j of jobs) {
+      if (j.item.kind !== 'text') autoDownload(j);
+      else text = j;
+    }
+    if (text) autoCopy(text);
+  }
+  async function autoCopy({ item, node }) {
+    const btn = $('.card-actions .btn', node);
+    try {
+      const cb = navigator.clipboard;
+      if (!cb || !cb.writeText) throw new Error('copy');
+      const text = typeof item.text === 'string' ? item.text : await (await fetchItem(item)).text();
+      await cb.writeText(text); // no execCommand fallback: that one needs a tap
+      if (btn) flashDone(btn);
+      toast('ok', ['auto.copied'], null, 2500);
+    } catch (e) {
+      if (e && e.message === 'unauthorized') return;
+      const card = $('.card', node);
+      if (!$('.card-note', card)) card.append(el('p', { class: 'card-note', msg: ['auto.copyFail'] }));
+    }
+  }
+  function autoDownload({ item, node }) {
+    const link = $('.card-actions a[href]', node);
+    if (!link) return;
+    const name = link.getAttribute('download') || item.name || 'file';
+    // A plain link download: Chrome's download manager shows the progress.
+    const a = el('a', { href: link.href, download: name, hidden: true });
+    body.append(a); a.click(); a.remove();
+    toast('ok', ['toast.downloading', { name }], ['auto.dlHint']);
+    showDownloadNote(node, ['download.native']);
+  }
+
+  function showDownloadNote(node, msg) {
+    const card = $('.card', node);
+    let slot = $('.download-slot', card);
+    if (!slot) { slot = el('div', { class: 'download-slot' }); card.append(slot); }
+    slot.replaceChildren(el('p', { class: 'card-note', msg }));
+    return slot;
+  }
+
+  // Chromium with a save picker can stream straight to disk and show progress
+  // here. Android uses its native downloader instead: no 2 GB Blob in memory,
+  // and the browser's Downloads screen supplies progress and resume support.
+  async function downloadItem(e, item, node, link) {
+    if (!window.isSecureContext || typeof window.showSaveFilePicker !== 'function') {
+      toast('ok', ['toast.downloading', { name: item.name || T('dock.file') }], ['toast.inDownloads']);
+      showDownloadNote(node, ['download.native']);
+      noteSuccess();
+      return; // preserve the ordinary download link
+    }
+    e.preventDefault();
+    if (link.dataset.busy) return;
+    link.dataset.busy = '1';
+    link.setAttribute('aria-disabled', 'true');
+    const controller = new AbortController();
+    let writer;
+    try {
+      const handle = await window.showSaveFilePicker({ suggestedName: item.name || (item.kind === 'image' ? 'image.png' : 'file') });
+      const slot = showDownloadNote(node, ['prog.receiving']);
+      const update = showProgress({ statusSlot: slot, total: item.size || 0, receiving: true }, controller);
+      const response = await fetch('/item/' + encodeURIComponent(item.id), { cache: 'no-store', signal: controller.signal });
+      if (response.status === 401) { onUnauthorized(); throw new Error('unauthorized'); }
+      if (!response.ok) throw new Error('gone');
+      if (!response.body) throw new Error('stream');
+      writer = await handle.createWritable();
+      await streamToDisk(response, writer, update, controller.signal, item.size);
+      writer = null; // streamToDisk has closed the file successfully
+      showDownloadNote(node, ['download.done']);
+      noteSuccess();
+    } catch (err) {
+      if (writer) { try { await writer.abort(); } catch { /* already closed */ } }
+      if (err && err.message === 'unauthorized') return;
+      const canceled = controller.signal.aborted || (err && err.name === 'AbortError');
+      showDownloadNote(node, [canceled ? 'canceled' : 'download.failed']);
+      if (!canceled) toast('err', ['download.failed'], null);
+    } finally {
+      delete link.dataset.busy;
+      link.removeAttribute('aria-disabled');
+    }
+  }
+
+  async function streamToDisk(response, writer, update, signal, fallbackTotal) {
+    const reader = response.body.getReader();
+    const total = Number(response.headers.get('Content-Length')) || fallbackTotal || 0;
+    let loaded = 0;
+    try {
+      for (;;) {
+        if (signal.aborted) throw new DOMException('Canceled', 'AbortError');
+        const { value, done } = await reader.read();
+        if (done) break;
+        await writer.write(value); // backpressure: one chunk at a time
+        loaded += value.byteLength;
+        update(loaded, total);
+      }
+      if (signal.aborted) throw new DOMException('Canceled', 'AbortError');
+      await writer.close();
+    } finally {
+      try { await reader.cancel(); } catch { /* aborted fetch */ }
+      reader.releaseLock();
+    }
+  }
+
   // ---------- send (phone -> PC) ----------
-  const DONE_TEXT = {
-    text: [['done.text'], ['done.paste']],
-    image: [['done.image'], ['done.paste']],
-    file: [['done.file'], ['done.fileWhere']],
-  };
+  // Where it went, from the reply: {kind, where: clipboard|folder, saved: [names]}.
+  function whereMsgs(kind, where, saved) {
+    if (where !== 'clipboard' && where !== 'folder') where = kind === 'file' ? 'folder' : 'clipboard';
+    if (where === 'clipboard') return [[kind === 'image' ? 'where.clipImg' : 'where.clip'], ['done.paste']];
+    const s = Array.isArray(saved) ? saved : [];
+    if (s.length > 1) return [['where.savedMore', { name: s[0], n: s.length - 1 }], ['where.folder']];
+    if (s.length === 1) return [['where.saved', { name: s[0] }], ['where.folder']];
+    return [['done.file'], ['where.folder']];
+  }
 
   function addOutgoing(desc) {
     const node = $('#tpl-out').content.firstElementChild.cloneNode(true);
@@ -399,23 +567,38 @@
   function showProgress(entry, xhr) {
     const fill = el('div', { class: 'progress-fill' });
     const pct = el('span', { class: 'progress-pct', dir: 'ltr', text: '0%' });
-    const bytes = el('span', { msg: [entry.total > 0 ? 'prog.sending' : 'prog.sendingPc'] });
+    const bytes = el('span', { msg: [entry.receiving ? 'prog.receiving' : entry.total > 0 ? 'prog.sending' : 'prog.sendingPc'] });
     const cancel = el('button', { type: 'button', class: 'out-btn' }, icon('x'), el('span', { msg: ['cancel'] }));
     cancel.addEventListener('click', () => xhr.abort());
     const bar = el('div', { class: 'progress', role: 'progressbar', attrMsg: { 'aria-label': ['prog.aria'] }, 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0' },
       el('div', { class: 'progress-track' }, fill),
       el('div', { class: 'progress-row' }, el('span', {}, pct, ' ', bytes), cancel));
     entry.statusSlot.replaceChildren(bar);
-    let last = 0;
+    let last = -1, painted = 0, speed = 0, tPrev = 0, lPrev = 0;
+    const start = performance.now();
     return (loaded, total) => {
+      const now = performance.now();
+      if (!tPrev) { tPrev = now; lPrev = loaded; }
+      if (now - tPrev >= 500) { // smoothed bytes per second
+        const inst = (loaded - lPrev) / ((now - tPrev) / 1000);
+        speed = speed ? speed * 0.7 + inst * 0.3 : inst;
+        tPrev = now; lPrev = loaded;
+      }
       const p = total ? Math.min(100, Math.floor((loaded / total) * 100)) : 0;
-      if (p === last && p !== 0) return;
-      last = p;
+      if (p === last && now - painted < 700) return;
+      last = p; painted = now;
       fill.style.width = p + '%';
       pct.textContent = p + '%';
       bar.setAttribute('aria-valuenow', String(p));
-      setMsg(bytes, p >= 100 ? ['prog.finishing'] : ['prog.of', { a: fmtSize(loaded), b: fmtSize(total) }]);
-      if (p >= 100) cancel.hidden = true;
+      if (p >= 100) { setMsg(bytes, ['prog.finishing']); cancel.hidden = true; return; }
+      const a = fmtSize(loaded), b = fmtSize(total);
+      if (speed > 0 && now - start > 1500) {
+        const secs = (total - loaded) / speed;
+        const eta = secs < 60 ? T('eta.s', { n: Math.max(1, Math.ceil(secs)) }) : T('eta.m', { n: Math.ceil(secs / 60) });
+        setMsg(bytes, ['prog.detail', { a, b, speed: fmtSize(speed), eta }]);
+      } else {
+        setMsg(bytes, ['prog.of', { a, b }]);
+      }
     };
   }
 
@@ -448,12 +631,10 @@
       xhr.onload = () => {
         const res = xhr.response || {};
         if (xhr.status === 200 && res.ok) {
-          const [a, b] = DONE_TEXT[res.kind] || DONE_TEXT.file;
-          let detail = b;
-          if (res.kind === 'file' && res.saved && res.saved.length > 1) detail = ['done.files', { n: res.saved.length }];
-          showResult(entry, true, a, detail);
+          const [a, b] = whereMsgs(res.kind, res.where, res.saved);
+          showResult(entry, true, a, b);
           noteSuccess();
-          toast('ok', [res.kind === 'file' ? 'toast.sentPc' : 'toast.copiedPc'], detail);
+          toast('ok', a, b);
           resolve(true);
           return;
         }
@@ -480,34 +661,50 @@
         showResult(entry, false, ['canceled'], null, retry, true);
         resolve(false);
       };
+      uploads++;
+      xhr.addEventListener('loadend', () => { uploads--; });
       xhr.send(makeBody());
     });
   }
+  // Leaving the page cancels an upload in progress: ask first.
+  let uploads = 0;
+  addEventListener('beforeunload', (e) => { if (uploads > 0) { e.preventDefault(); e.returnValue = ''; } });
 
+  // The destination is read once per transfer, so Retry sends it the same way.
   function sendText(text) {
+    const mode = pref('dest');
     const entry = addOutgoing({ text });
-    return transmit(entry, () => JSON.stringify({ text }), 'application/json');
+    return transmit(entry, () => JSON.stringify({ text, mode }), 'application/json');
+  }
+  function tooBig(size) {
+    toast('err', ['err.too_large.t'], ['tooBig.detail', { size: fmtSize(size), limit: fmtSize(maxBytes) }]);
   }
   function sendClipboardImage(blob) {
+    if (blob.size > maxBytes) return tooBig(blob.size);
+    const mode = pref('dest');
     const thumb = URL.createObjectURL(blob);
     const entry = addOutgoing({ thumb, total: blob.size });
     return transmit(entry, () => {
       const fd = new FormData();
-      fd.append('mode', 'clipboard'); // must precede the file
+      fd.append('mode', mode); // must come first
       fd.append('file', blob, 'clipboard.png');
       return fd;
     });
   }
+  // Files go as one streamed multipart body: FormData keeps references to the
+  // File objects, so even a 2 GB video is never read into memory here.
   function sendFiles(list) {
     const files = Array.from(list);
     if (!files.length) return;
     const total = files.reduce((a, f) => a + f.size, 0);
-    if (total > MAX_BYTES) return toast('err', ...errorText('too_large'));
+    if (total > maxBytes) return tooBig(total);
+    const mode = pref('dest');
     let thumb = null;
-    if (files.length === 1 && /^image\/(png|jpe?g|gif|webp)$/.test(files[0].type)) thumb = URL.createObjectURL(files[0]);
+    if (files.length === 1 && /^image\/(png|jpe?g|gif|webp)$/.test(files[0].type) && files[0].size < 40 * 1024 * 1024) thumb = URL.createObjectURL(files[0]);
     const entry = addOutgoing({ files, thumb, total });
     return transmit(entry, () => {
       const fd = new FormData();
+      fd.append('mode', mode); // must come first
       for (const f of files) fd.append('files', f, f.name);
       return fd;
     });
@@ -521,9 +718,11 @@
     try {
       const got = await readClipboard();
       if (got === null) { openSheet('sheet-paste', true); return; }
-      if (got instanceof Blob) { await sendClipboardImage(got); }
+      let sent;
+      if (got instanceof Blob) { sent = await sendClipboardImage(got); }
       else if (!got.trim()) { toast('err', ...errorText('empty')); return; }
-      else { await sendText(got); }
+      else { sent = await sendText(got); }
+      if (!sent) return;
       sendBtn.classList.remove('is-sent'); void sendBtn.offsetWidth; sendBtn.classList.add('is-sent');
     } finally {
       busy = false;
@@ -569,6 +768,7 @@
     d.showModal();
     if (id === 'sheet-paste') setTimeout(() => $('#paste-text').focus(), 60);
     if (id === 'sheet-cert' || id === 'sheet-settings') loadCertFp();
+    if (id === 'sheet-settings') checkStatus(); // fresh PC receive mode
   }
   document.addEventListener('click', (e) => {
     const opener = e.target.closest('[data-open]');
@@ -652,6 +852,8 @@
   // msgKey: i18n key for the lead line (null: the default).
   function goUnpaired(msgKey) {
     paired = false;
+    initialSyncDone = false;
+    autoQueue.length = 0;
     store.del('paired');
     closeStream();
     clearTimeout(retryTimer); clearInterval(countdownTimer); clearTimeout(bannerTimer);
@@ -670,6 +872,8 @@
       const j = await r.json();
       if (j.fingerprint) $('#fingerprint').textContent = formatFingerprint(j.fingerprint);
       if (j.shortFingerprint && !shortFp) showShortFp(j.shortFingerprint);
+      if (Number.isSafeInteger(j.maxBytes) && j.maxBytes > 0) maxBytes = j.maxBytes;
+      if (typeof j.receiveMode === 'string') { receiveMode = j.receiveMode; showPcMode(); }
       return 'ok';
     } catch { return 'down'; }
   }
@@ -721,6 +925,7 @@
     es.addEventListener('item', (ev) => {
       try { addReceived(JSON.parse(ev.data)); } catch { /* ignore malformed */ }
     });
+    es.addEventListener('ready', () => { initialSyncDone = true; });
     es.addEventListener('error', async () => {
       closeStream();
       streamOpenedAt = 0;
@@ -778,7 +983,9 @@
   addEventListener('online', () => { if (paired && conn.dataset.state !== 'online') retryNow(); });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && paired && conn.dataset.state !== 'online') retryNow();
+    runAuto();
   });
+  addEventListener('focus', runAuto);
 
   // Language switched (i18n.js already re-rendered every data-i18n node):
   // refresh what is computed rather than looked up.
@@ -861,8 +1068,7 @@
     updateEmpty();
     if (s === 'ok') connect(); else scheduleReconnect();
     if (sent) {
-      const [a, b] = DONE_TEXT[sent] || DONE_TEXT.file;
-      toast('ok', [sent === 'file' ? 'toast.sentPc' : 'toast.copiedPc'], sent === 'file' ? b : a);
+      toast('ok', ...whereMsgs(sent, null, null));
     } else if (err) {
       toast('err', ...errorText(err));
     }

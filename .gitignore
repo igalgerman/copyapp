@@ -1,4 +1,13 @@
 dist/
+/copyapp.exe
 docs/video/*.mp4
 docs/video/raw/
 docs/video/make/tmp/
+.claude/
+.playwright-cli/
+.playwright-mcp/
+output/
+landing/
+landing-deploy.tar.gz
+copyapp-website.zip
+docs/HANDOFF.md

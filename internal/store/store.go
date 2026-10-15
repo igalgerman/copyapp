@@ -37,11 +37,17 @@ var ErrTooLarge = errors.New("store: item too large")
 // It matches ErrTooLarge with errors.Is.
 var ErrOutboxFull = fmt.Errorf("%w: outbox is full, try again in a few minutes", ErrTooLarge)
 
+// Item is one outbox entry. Kind: "text"|"image"|"file".
+// Either Data holds the bytes in memory, or Path names a file on disk that is
+// served from there (big files picked on the PC). The store never deletes or
+// changes that file; expiry only drops the entry.
 type Item struct {
 	ID, Kind, Name, Mime string
 	Data                 []byte
+	Path                 string
+	Size                 int64 // len(Data), or the file size when added
 	Created              time.Time
-} // Kind: "text"|"image"|"file"
+}
 
 type Store struct {
 	mu       sync.Mutex
@@ -63,12 +69,25 @@ func (s *Store) evictLocked() {
 	}
 }
 
-// Add stores the item and returns its new ID. Rejects items over 200 MB or
-// that would push the outbox over 400 MB, and evicts items older than 10
-// minutes.
+// Add stores the item and returns its new ID. In-memory items over 200 MB, or
+// that would push the in-memory outbox over 400 MB, are rejected; path items
+// do not count (the caller checks their size). Items older than 10 minutes
+// are evicted.
 func (s *Store) Add(it Item) (string, error) {
-	if len(it.Data) > MaxItemSize {
-		return "", ErrTooLarge
+	if it.Path != "" {
+		fi, err := os.Stat(it.Path)
+		if err != nil {
+			return "", err
+		}
+		if fi.IsDir() {
+			return "", fmt.Errorf("store: %s is a folder", it.Path)
+		}
+		it.Data, it.Size = nil, fi.Size()
+	} else {
+		if len(it.Data) > MaxItemSize {
+			return "", ErrTooLarge
+		}
+		it.Size = int64(len(it.Data))
 	}
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {

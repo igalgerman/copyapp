@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -121,5 +122,39 @@ func TestOutboxCapFreedByExpiry(t *testing.T) {
 	now = now.Add(Expiry + time.Second)
 	if _, err := s.Add(Item{Data: make([]byte, 10)}); err != nil {
 		t.Fatalf("expired items must free space: %v", err)
+	}
+}
+
+func TestPathItemsDoNotCountAndKeepTheFile(t *testing.T) {
+	s := New()
+	s.maxTotal = 10
+	now := time.Now()
+	s.now = func() time.Time { return now }
+	p := filepath.Join(t.TempDir(), "big.bin")
+	os.WriteFile(p, make([]byte, 1000), 0o644)
+	id, err := s.Add(Item{Kind: "file", Name: "big.bin", Path: p})
+	if err != nil {
+		t.Fatalf("path items are not in memory, the cap must not apply: %v", err)
+	}
+	if it, _ := s.Get(id); it.Size != 1000 || it.Data != nil {
+		t.Fatalf("size %d", it.Size)
+	}
+	if _, err := s.Add(Item{Data: make([]byte, 10)}); err != nil {
+		t.Fatalf("memory cap must ignore path items: %v", err)
+	}
+	if id2, _ := s.Add(Item{Data: []byte("abc")}); id2 != "" {
+		if it, _ := s.Get(id2); it.Size != 3 {
+			t.Fatal("size of memory item")
+		}
+	}
+	now = now.Add(Expiry + time.Second)
+	if _, ok := s.Get(id); ok {
+		t.Fatal("not expired")
+	}
+	if _, err := os.Stat(p); err != nil {
+		t.Fatal("expiry must not delete the user's file")
+	}
+	if _, err := s.Add(Item{Path: filepath.Join(t.TempDir(), "missing")}); err == nil {
+		t.Fatal("missing file accepted")
 	}
 }

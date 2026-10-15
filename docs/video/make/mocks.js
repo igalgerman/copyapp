@@ -5,6 +5,7 @@ const BASE = `
 *{box-sizing:border-box}
 body{margin:0;width:1280px;height:720px;overflow:hidden;font:16px "Segoe UI",system-ui,sans-serif;color:#1b1d22;
  background:linear-gradient(135deg,#cfd8f6,#e9edf6 55%,#fff1c2)}
+body::after{content:'Illustration';position:fixed;top:6px;right:12px;padding:4px 10px;background:#fff;color:#4b5371;border-radius:5px;font:14px "Segoe UI";z-index:9999}
 .win{position:absolute;background:#fff;border:1px solid #b9c0d4;border-radius:10px;box-shadow:0 18px 50px rgba(21,27,51,.28);overflow:hidden}
 .tb{height:38px;background:#f1f3f9;border-bottom:1px solid #d9deea;display:flex;align-items:center;padding:0 14px;font-size:14px;color:#4b5371;gap:10px}
 .tb i{width:12px;height:12px;border-radius:50%;background:#c9cfdf;display:inline-block}
@@ -34,13 +35,13 @@ h1{margin:0;font-size:34px} .tag{display:inline-block;background:#dcf5e6;color:#
 .go .dl{transform:none;opacity:1}
 .bar{height:8px;border-radius:4px;background:#e4e8f3;margin-top:10px;overflow:hidden}.bar b{display:block;height:100%;width:0;background:#2E44E8;transition:width 2.2s}.go .bar b{width:100%}
 .note{position:absolute;left:0;right:0;bottom:6px;text-align:center;color:#6e7693;font-size:13px}
-`, `<div class="win"><div class="tb"><i></i><i></i><i></i><span class="addr">Releases page (illustration)</span></div>
+`, `<div class="win"><div class="tb"><i></i><i></i><i></i><span class="addr">copyapp.igalg.chatgpt.site (illustration)</span></div>
 <div class="body"><h1>CopyApp <span class="tag">Latest</span></h1><p style="color:#4b5371;font-size:18px">Copy and paste between your PC and your Android phone.</p>
-<div class="assets"><h3>Assets</h3>
+<div class="assets"><h3>Download for Windows</h3>
 <div class="row" id="exe"><img src="${icon}"><b>copyapp.exe</b><small>about 12 MB</small></div>
-<div class="row"><span style="width:34px"></span>Source code (zip)<small></small></div></div></div>
+<div class="row"><span style="width:34px"></span>Install and use videos<small></small></div></div></div>
 <div class="dl"><b>copyapp.exe</b><div class="bar"><b></b></div><div style="margin-top:8px;color:#0E7A57" id="done"></div></div>
-<div class="note">Mock-up for this video - the real file is on the project's Releases page</div></div>`,
+<div class="note">Illustration - get the real file from the CopyApp website</div></div>`,
 `setTimeout(()=>document.getElementById('exe').classList.add('pulse','hit'),600);
 window.click=()=>{document.body.classList.add('go');setTimeout(()=>document.getElementById('done').textContent='Downloaded - open it',2400)}`);
 
@@ -72,7 +73,7 @@ exports.prompts = () => page(`
 <div class="win hide" id="s2"><div class="hd" style="background:#2b3045">Windows firewall</div>
 <div class="pd">Allow <b>CopyApp</b> to talk on these networks:
 <div class="chk">&#9745; <b>Private networks</b>, such as my home or work network</div>
-<div class="chk">&#9744; Public networks (not needed)</div></div>
+<div class="chk">&#9745; Public networks (if this is your Windows network profile)</div></div>
 <div class="ft"><span class="btn" id="allow">Allow access</span><span class="btn alt">Cancel</span></div></div>`,
 `const $=i=>document.getElementById(i);
 window.step=(n)=>{
@@ -82,6 +83,8 @@ window.step=(n)=>{
 }`);
 
 // 4) Notepad-like window showing real text
+exports.startupChoice = () => page(`.win{left:290px;top:170px;width:700px;padding:32px}.actions{display:flex;gap:18px;margin-top:30px}`, `<div class="win"><h1>CopyApp is installed</h1><p>Desktop and Start Menu shortcuts are ready.</p><h2>Start CopyApp with Windows?</h2><p>You can change this later in Settings.</p><div class="actions"><span class="btn">Yes</span><span class="btn alt">No</span></div></div>`);
+
 exports.notepad = (title, text, hint, big) => page(`
 .win{left:190px;top:70px;width:900px;height:500px}
 pre{margin:0;padding:26px 30px;font:26px/1.5 Consolas,monospace;white-space:pre-wrap;color:#151B33}

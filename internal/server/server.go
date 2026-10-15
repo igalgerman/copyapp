@@ -13,8 +13,10 @@
 //	GET  /item/{id}              outbox item bytes
 //	POST /unpair                 drop the session
 //	GET  /pairing, /qr, /pairing/status, POST /pairing/open
-//	                             PC-only pages (loopback source, localhost Host and
-//	                             the per-launch local secret; see Config.LocalSecret)
+//	GET  /local/state, POST /local/{settings,choose-folder,open-folder,repair,uninstall}
+//	                             PC-only control window (loopback source, localhost
+//	                             Host and the per-launch local secret; see
+//	                             Config.LocalSecret)
 package server
 
 import (
@@ -23,9 +25,7 @@ import (
 	"embed"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"image/png"
 	"io"
 	"io/fs"
 	"mime"
@@ -37,11 +37,11 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/igalgerman/copyapp/internal/auth"
 	"github.com/igalgerman/copyapp/internal/i18n"
 	"github.com/igalgerman/copyapp/internal/secret"
+	"github.com/igalgerman/copyapp/internal/settings"
 	"github.com/igalgerman/copyapp/internal/store"
 	"github.com/igalgerman/copyapp/internal/tlsutil"
 )
@@ -64,16 +64,18 @@ type Clipboard interface {
 }
 
 type Config struct {
-	Auth    *auth.Auth
-	Store   *store.Store
-	Clip    Clipboard
-	SaveDir string // received files go here
-	CAPEM   []byte
+	Auth  *auth.Auth
+	Store *store.Store
+	Clip  Clipboard
+	// Settings holds the receive mode, save folder and size limit. Nil: an
+	// in-memory store built from SaveDir and MaxBytes below.
+	Settings *settings.Store
+	SaveDir  string // used only when Settings is nil
+	MaxBytes int64  // used only when Settings is nil; 0 = settings.DefaultMaxBytes
+	CAPEM    []byte
 	// BaseURL returns the phone-facing origin, e.g. "https://192.168.1.5:8443".
 	// It is called each time a pairing URL is built.
 	BaseURL func() string
-	// MaxBytes caps one item; 0 means store.MaxItemSize (200 MB).
-	MaxBytes int64
 	// Logf receives one line per request (method, path without query, status)
 	// and errors. Never secrets. Optional.
 	Logf func(format string, args ...any)
@@ -86,6 +88,17 @@ type Config struct {
 	// wired); the pairing page names it so the phone joins the same network.
 	// Optional.
 	WiFiName func() string
+
+	// PC-side hooks for the control window (/pairing). All optional.
+	ChooseFolder func(current string) (string, error) // "" = cancelled
+	OpenFolder   func(path string) error
+	Uninstall    func()
+	OnSettings   func(old, cur settings.Settings) // after a change from the control window
+	Autostart    func() bool
+	SetAutostart func(on bool) error
+	LogPath      string
+	Hotkey       func() string // the active "send clipboard" shortcut
+	Version      string
 }
 
 // LocalCookieName holds the local secret for the PC's own pairing page.
@@ -106,11 +119,18 @@ type Server struct {
 	pairToken string
 	openedAt  time.Time
 	pairedAt  time.Time
+	lastSeen  time.Time
+
+	transfers transfers
+
+	wifiMu   sync.Mutex
+	wifi     string
+	wifiTime time.Time
 }
 
 func New(cfg Config) *Server {
-	if cfg.MaxBytes <= 0 {
-		cfg.MaxBytes = store.MaxItemSize
+	if cfg.Settings == nil {
+		cfg.Settings = settings.NewMemory(settings.Settings{SaveDir: cfg.SaveDir, MaxBytes: cfg.MaxBytes})
 	}
 	if cfg.Logf == nil {
 		cfg.Logf = func(string, ...any) {}
@@ -138,6 +158,12 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("GET /pairing/status", s.localOnly(s.pairingStatus))
 	mux.HandleFunc("POST /pairing/open", s.localOnly(s.pairingOpen))
 	mux.HandleFunc("GET /qr", s.localOnly(s.qr))
+	mux.HandleFunc("GET /local/state", s.localOnly(s.localState))
+	mux.HandleFunc("POST /local/settings", s.localOnly(localPost(s.localSettings)))
+	mux.HandleFunc("POST /local/choose-folder", s.localOnly(localPost(s.localChooseFolder)))
+	mux.HandleFunc("POST /local/open-folder", s.localOnly(localPost(s.localOpenFolder)))
+	mux.HandleFunc("POST /local/repair", s.localOnly(localPost(s.localRepair)))
+	mux.HandleFunc("POST /local/uninstall", s.localOnly(localPost(s.localUninstall)))
 	s.handler = s.logged(securityHeaders(privateOnly(mux)))
 	return s
 }
@@ -161,6 +187,20 @@ func (s *Server) pairURL(tok string) string {
 
 // Publish adds an item to the outbox and pushes it to connected phones.
 func (s *Server) Publish(it store.Item) (string, error) {
+	size := int64(len(it.Data))
+	if it.Path != "" {
+		fi, err := os.Stat(it.Path)
+		if err != nil {
+			return "", err
+		}
+		if !fi.Mode().IsRegular() {
+			return "", fmt.Errorf("only regular files can be sent")
+		}
+		size = fi.Size()
+	}
+	if size > s.cfg.Settings.Get().MaxBytes {
+		return "", store.ErrTooLarge
+	}
 	id, err := s.cfg.Store.Add(it)
 	if err != nil {
 		return "", err
@@ -295,6 +335,9 @@ func (s *Server) requireAuth(h http.HandlerFunc) http.HandlerFunc {
 			jsonError(w, http.StatusUnauthorized, "unauthorized", "not paired: scan the QR code on your PC")
 			return
 		}
+		s.mu.Lock()
+		s.lastSeen = time.Now()
+		s.mu.Unlock()
 		h(w, r)
 	}
 }
@@ -457,8 +500,11 @@ func (s *Server) caCert(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+	set := s.cfg.Settings.Get()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"paired": true, "fingerprint": fingerprint(s.cfg.CAPEM), "shortFingerprint": tlsutil.ShortFingerprint(s.cfg.CAPEM),
+		// What the PC does with items sent with mode=auto, and the per-item limit.
+		"receiveMode": set.ReceiveMode, "maxBytes": set.MaxBytes,
 	})
 }
 
@@ -467,340 +513,6 @@ func (s *Server) unpair(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, s.cookie("", -1))
 	s.cfg.Clip.Notify("CopyApp", i18n.T("toast.unpaired"))
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// ---------- send (phone -> PC) ----------
-
-type sendError struct {
-	status   int
-	code     string
-	msg      string
-	internal error
-}
-
-func (e *sendError) Error() string { return e.msg }
-
-func badRequest(code, msg string) *sendError {
-	return &sendError{status: http.StatusBadRequest, code: code, msg: msg}
-}
-
-var errTooLarge = &sendError{status: http.StatusRequestEntityTooLarge, code: "too_large", msg: "item is larger than the 200 MB limit"}
-
-// limitReader returns errTooLarge once more than n bytes are read.
-type limitReader struct {
-	r    io.Reader
-	n    int64
-	over bool
-}
-
-func (l *limitReader) Read(p []byte) (int, error) {
-	if l.n < 0 {
-		l.over = true
-		return 0, errTooLarge
-	}
-	if int64(len(p)) > l.n+1 {
-		p = p[:l.n+1]
-	}
-	n, err := l.r.Read(p)
-	l.n -= int64(n)
-	if l.n < 0 {
-		l.over = true
-		return n, errTooLarge
-	}
-	return n, err
-}
-
-type sendResult struct {
-	Kind  string   `json:"kind"` // text | image | file
-	Saved []string `json:"saved,omitempty"`
-}
-
-func (s *Server) send(w http.ResponseWriter, r *http.Request) {
-	rc := http.NewResponseController(w)
-	_ = rc.SetReadDeadline(time.Now().Add(time.Hour)) // big uploads on slow Wi-Fi
-
-	ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	slack := int64(64 << 10)
-	if ct == "multipart/form-data" {
-		slack = multipartSlack
-	}
-	limit := s.cfg.MaxBytes + slack
-	if r.ContentLength > limit {
-		s.sendDone(w, r, nil, errTooLarge)
-		return
-	}
-	body := &limitReader{r: http.MaxBytesReader(w, r.Body, limit+1), n: limit}
-
-	var res *sendResult
-	var err error
-	switch ct {
-	case "application/json":
-		res, err = s.sendJSON(body)
-	case "multipart/form-data":
-		r.Body = io.NopCloser(body)
-		res, err = s.sendMultipart(r)
-	default:
-		err = &sendError{status: http.StatusUnsupportedMediaType, code: "unsupported", msg: "send JSON or multipart/form-data"}
-	}
-	if body.over {
-		err = errTooLarge
-	}
-	var mbe *http.MaxBytesError
-	if errors.As(err, &mbe) || errors.Is(err, store.ErrTooLarge) {
-		err = errTooLarge
-	}
-	s.sendDone(w, r, res, err)
-}
-
-func (s *Server) sendDone(w http.ResponseWriter, r *http.Request, res *sendResult, err error) {
-	if err != nil {
-		var se *sendError
-		if !errors.As(err, &se) {
-			se = &sendError{status: http.StatusBadRequest, code: "bad_request", msg: "could not read the upload", internal: err}
-		}
-		if se.internal != nil {
-			s.cfg.Logf("send: %s: %v", se.code, se.internal)
-		}
-		if isNavigate(r) {
-			http.Redirect(w, r, "/?error="+se.code, http.StatusSeeOther)
-			return
-		}
-		reply := map[string]any{"error": se.msg, "code": se.code}
-		if res != nil && len(res.Saved) > 0 {
-			reply["saved"] = res.Saved // partial success: these files are on the PC
-		}
-		writeJSON(w, se.status, reply)
-		return
-	}
-	if isNavigate(r) { // Android share target posts as a navigation
-		http.Redirect(w, r, "/?sent="+res.Kind, http.StatusSeeOther)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "kind": res.Kind, "saved": res.Saved})
-}
-
-func (s *Server) sendJSON(body io.Reader) (*sendResult, error) {
-	var req struct {
-		Text *string `json:"text"`
-	}
-	if err := json.NewDecoder(body).Decode(&req); err != nil {
-		if errors.Is(err, errTooLarge) {
-			return nil, errTooLarge
-		}
-		return nil, badRequest("bad_request", "invalid JSON")
-	}
-	if req.Text == nil {
-		return nil, badRequest("empty", "empty text")
-	}
-	return s.setText(*req.Text)
-}
-
-func (s *Server) setText(t string) (*sendResult, error) {
-	if strings.TrimSpace(t) == "" {
-		return nil, badRequest("empty", "empty text: nothing to copy")
-	}
-	if int64(len(t)) > s.cfg.MaxBytes {
-		return nil, errTooLarge
-	}
-	if !utf8.ValidString(t) {
-		return nil, badRequest("bad_text", "text is not valid UTF-8")
-	}
-	if err := s.cfg.Clip.SetText(t); err != nil {
-		return nil, &sendError{status: http.StatusInternalServerError, code: "clipboard", msg: "could not set the PC clipboard", internal: err}
-	}
-	// Never show the text itself: toasts appear on the lock screen and in history.
-	s.cfg.Clip.Notify(i18n.T("toast.textTitle"), i18n.T("toast.textBody", utf8.RuneCountInString(t)))
-	return &sendResult{Kind: "text"}, nil
-}
-
-var extByMime = map[string]string{
-	"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp",
-	"image/heic": ".heic", "text/plain": ".txt", "application/pdf": ".pdf",
-	"video/mp4": ".mp4", "audio/mpeg": ".mp3", "application/zip": ".zip",
-}
-
-type pendingPNG struct {
-	name string
-	data []byte
-}
-
-// sendMultipart handles the PWA upload and the Android share target.
-// Fields: "mode" ("clipboard" | "file", optional, must come before files),
-// "text", "title", "url", and one or more files in "file" or "files".
-// Without mode, a single image/png file goes to the clipboard and everything
-// else is saved to SaveDir.
-// On failure after some files were saved, the result lists them alongside the
-// error.
-func (s *Server) sendMultipart(r *http.Request) (res *sendResult, err error) {
-	mr, err := r.MultipartReader()
-	if err != nil {
-		return nil, badRequest("bad_request", "invalid multipart body")
-	}
-	var (
-		mode                 string
-		text, title, linkURL string
-		saved                []string
-		pending              *pendingPNG
-		nFiles               int
-	)
-	defer func() {
-		if err != nil && len(saved) > 0 {
-			res = &sendResult{Kind: "file", Saved: saved}
-			s.cfg.Clip.Notify(i18n.T("toast.partTitle"), i18n.T("toast.partBody", len(saved)))
-		}
-	}()
-	readBytes := func(p io.Reader) ([]byte, error) {
-		b, err := io.ReadAll(io.LimitReader(p, s.cfg.MaxBytes+1))
-		if err != nil {
-			return nil, err
-		}
-		if int64(len(b)) > s.cfg.MaxBytes {
-			return nil, errTooLarge
-		}
-		return b, nil
-	}
-	readField := func(p io.Reader) (string, error) {
-		b, err := readBytes(p)
-		return string(b), err
-	}
-	save := func(name string, rd io.Reader) error {
-		if err := os.MkdirAll(s.cfg.SaveDir, 0o700); err != nil {
-			return &sendError{status: http.StatusInternalServerError, code: "save", msg: "could not create the receive folder", internal: err}
-		}
-		path, err := store.SaveFile(s.cfg.SaveDir, name, rd, s.cfg.MaxBytes)
-		if err != nil {
-			if errors.Is(err, store.ErrTooLarge) || errors.Is(err, errTooLarge) {
-				return errTooLarge
-			}
-			return &sendError{status: http.StatusInternalServerError, code: "save", msg: "could not save the file", internal: err}
-		}
-		saved = append(saved, fileBase(path))
-		return nil
-	}
-	flushPending := func() error {
-		if pending == nil {
-			return nil
-		}
-		p := pending
-		pending = nil
-		return save(p.name, bytes.NewReader(p.data))
-	}
-
-	for {
-		p, err := mr.NextPart()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		field := p.FormName()
-		switch field {
-		case "mode", "text", "title", "url":
-			v, err := readField(p)
-			if err != nil {
-				return nil, err
-			}
-			switch field {
-			case "mode":
-				mode = strings.TrimSpace(v)
-			case "text":
-				text = v
-			case "title":
-				title = v
-			case "url":
-				linkURL = v
-			}
-		case "file", "files":
-			nFiles++
-			ctype, _, _ := mime.ParseMediaType(p.Header.Get("Content-Type"))
-			name := p.FileName()
-			if strings.Trim(name, ". ") == "" {
-				name = "file" + extByMime[ctype]
-			}
-			switch {
-			case mode == "clipboard":
-				if nFiles > 1 {
-					return nil, badRequest("bad_request", "only one image can go to the clipboard")
-				}
-				if ctype != "image/png" && ctype != "application/octet-stream" && ctype != "" {
-					return nil, badRequest("not_png", "clipboard images must be PNG")
-				}
-				b, err := readBytes(p)
-				if err != nil {
-					return nil, err
-				}
-				pending = &pendingPNG{name: name, data: b}
-			case mode != "file" && ctype == "image/png" && nFiles == 1:
-				b, err := readBytes(p) // held until we know it is the only file
-				if err != nil {
-					return nil, err
-				}
-				pending = &pendingPNG{name: name, data: b}
-			default:
-				if err := flushPending(); err != nil {
-					return nil, err
-				}
-				if err := save(name, p); err != nil {
-					return nil, err
-				}
-			}
-		default:
-			io.Copy(io.Discard, io.LimitReader(p, multipartSlack))
-		}
-		p.Close()
-	}
-
-	if pending != nil && nFiles == 1 {
-		cfg, err := png.DecodeConfig(bytes.NewReader(pending.data))
-		if err != nil {
-			return nil, badRequest("not_png", "the image is not a valid PNG; the PC clipboard was not changed")
-		}
-		huge := int64(cfg.Width)*int64(cfg.Height) > store.MaxImagePixels
-		if huge && mode == "clipboard" {
-			return nil, &sendError{status: http.StatusRequestEntityTooLarge, code: "too_many_pixels",
-				msg: "the image is larger than 50 megapixels; send it as a file"}
-		}
-		if !huge { // a huge PNG without an explicit mode is saved as a file below
-			if err := s.cfg.Clip.SetImagePNG(pending.data); err != nil {
-				return nil, &sendError{status: http.StatusInternalServerError, code: "clipboard", msg: "could not set the PC clipboard", internal: err}
-			}
-			s.cfg.Clip.Notify(i18n.T("toast.imageTitle"), i18n.T("toast.imageBody"))
-			return &sendResult{Kind: "image"}, nil
-		}
-	}
-	if err := flushPending(); err != nil {
-		return nil, err
-	}
-	if len(saved) > 0 {
-		msg := saved[0]
-		if len(saved) > 1 {
-			msg = i18n.T("toast.savedMore", saved[0], len(saved)-1)
-		}
-		s.cfg.Clip.Notify(i18n.T("toast.savedTitle"), msg)
-		return &sendResult{Kind: "file", Saved: saved}, nil
-	}
-	if mode == "clipboard" {
-		return nil, badRequest("not_png", "no PNG image in the request")
-	}
-	t := text
-	if linkURL != "" && !strings.Contains(t, linkURL) {
-		if strings.TrimSpace(t) != "" {
-			t += "\n"
-		}
-		t += linkURL
-	}
-	if strings.TrimSpace(t) == "" {
-		t = title
-	}
-	return s.setText(t)
-}
-
-func fileBase(p string) string {
-	if i := strings.LastIndexAny(p, `\/`); i >= 0 {
-		return p[i+1:]
-	}
-	return p
 }
 
 // ---------- outbox (PC -> phone) ----------
@@ -812,13 +524,13 @@ type itemJSON struct {
 	Kind    string    `json:"kind"`
 	Name    string    `json:"name,omitempty"`
 	Mime    string    `json:"mime,omitempty"`
-	Size    int       `json:"size"`
+	Size    int64     `json:"size"`
 	Created time.Time `json:"created"`
 	Text    string    `json:"text,omitempty"` // text items up to 256 KB
 }
 
 func sseMessage(it store.Item) []byte {
-	j := itemJSON{ID: it.ID, Kind: it.Kind, Name: it.Name, Mime: it.Mime, Size: len(it.Data), Created: it.Created}
+	j := itemJSON{ID: it.ID, Kind: it.Kind, Name: it.Name, Mime: it.Mime, Size: it.Size, Created: it.Created}
 	if it.Kind == "text" && len(it.Data) <= inlineTextMax {
 		j.Text = string(it.Data)
 	}
@@ -862,6 +574,9 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	for i := len(items) - 1; i >= 0; i-- { // oldest first
 		w.Write(sseMessage(items[i]))
 	}
+	// Let the phone distinguish the initial history from new transfers, so
+	// opening the app does not automatically download the same files again.
+	io.WriteString(w, "event: ready\ndata: {}\n\n")
 	if rc.Flush() != nil {
 		return
 	}
@@ -924,8 +639,33 @@ func (s *Server) item(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Disposition", mime.FormatMediaType(disp, map[string]string{"filename": name}))
 	h.Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	h.Set("Cache-Control", "no-store")
-	h.Set("Content-Length", fmt.Sprint(len(it.Data)))
-	w.Write(it.Data)
+
+	// ServeContent handles Range (resumable downloads) and Content-Length.
+	var content io.ReadSeeker = bytes.NewReader(it.Data)
+	mod := it.Created
+	if it.Path != "" { // big file picked on the PC: streamed from disk
+		f, err := os.Open(it.Path)
+		if err != nil {
+			s.cfg.Logf("item: file is gone: %v", err)
+			http.NotFound(w, r)
+			return
+		}
+		defer f.Close()
+		fi, err := f.Stat()
+		if err != nil || fi.IsDir() {
+			http.NotFound(w, r)
+			return
+		}
+		if !fi.Mode().IsRegular() || fi.Size() > s.cfg.Settings.Get().MaxBytes {
+			jsonError(w, http.StatusRequestEntityTooLarge, "too_large", "file exceeds the current size limit")
+			return
+		}
+		content, mod = f, fi.ModTime()
+		tr := s.transfers.start("out", it.Name, fi.Size())
+		defer tr.end()
+		w = &countWriter{ResponseWriter: w, tr: tr}
+	}
+	http.ServeContent(w, r, name, mod, content)
 }
 
 func randomNonce() string {

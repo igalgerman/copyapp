@@ -521,10 +521,13 @@ func TestTooLargeRejected(t *testing.T) {
 	}
 }
 
-func TestDefaultLimitIs200MB(t *testing.T) {
+func TestDefaultLimitIs2GiB(t *testing.T) {
 	e := newEnv(t, 0)
-	if e.s.cfg.MaxBytes != store.MaxItemSize || store.MaxItemSize != 200<<20 {
-		t.Fatalf("limit %d", e.s.cfg.MaxBytes)
+	if got := e.s.cfg.Settings.Get().MaxBytes; got != 2<<30 {
+		t.Fatalf("limit %d", got)
+	}
+	if store.MaxItemSize != 200<<20 || clipboardCap != 200<<20 {
+		t.Fatal("in-memory caps (clipboard images, outbox) stay 200 MB")
 	}
 }
 
@@ -596,6 +599,16 @@ func TestEventsStreamAndBroadcast(t *testing.T) {
 	ev := readEvent(t, br)
 	if ev["id"] != id1 || ev["kind"] != "text" || ev["text"] != "first" {
 		t.Fatalf("initial event: %v", ev)
+	}
+	// The boundary prevents the phone's automatic receive options replaying
+	// downloads when the user merely reopens the app.
+	var ready strings.Builder
+	for !strings.Contains(ready.String(), "event: ready\ndata: {}\n\n") {
+		line, err := br.ReadString('\n')
+		if err != nil {
+			t.Fatalf("ready boundary: %v", err)
+		}
+		ready.WriteString(line)
 	}
 	id2, _ := e.s.Publish(store.Item{Kind: "image", Name: "a.png", Mime: "image/png", Data: pngBytes()})
 	ev = readEvent(t, br)

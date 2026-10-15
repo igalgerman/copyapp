@@ -42,7 +42,7 @@ async function cards() {
   const marks = meta.marks; const end = marks.find((m) => m.text === 'END').t;
   const caps = marks.filter((m) => m.text !== 'END').map((m, i, a) => ({ ...m, t1: (a[i + 1] ? a[i + 1].t : end) }));
   caps.forEach((c, i) => fs.writeFileSync(path.join(RAW, `cap${i}.txt`), c.text));
-  const dt = (file, extra) => `drawtext=fontfile=font.ttf:textfile=${file}:fontcolor=0x1E1A05:fontsize=36:x=(w-text_w)/2:y=650+(70-text_h)/2${extra || ''}`;
+  const dt = (file, extra) => `drawtext=fontfile=font.ttf:textfile=${file}:fontcolor=0x1E1A05:fontsize=29:x=(w-text_w)/2:y=650+(70-text_h)/2${extra || ''}`;
   const lab = (t, x, y) => `drawtext=fontfile=font.ttf:text='${t}':fontcolor=0xFFD447:fontsize=26:x=${x}:y=${y}`;
   const filters = [
     `color=c=0x1C2A9C:s=1280x720:r=25:d=${end.toFixed(2)}[bg]`,

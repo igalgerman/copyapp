@@ -7,8 +7,9 @@ import (
 )
 
 // makeICO draws a 32x32 rounded blue square with two overlapping white
-// "pages" and returns it as a BMP-based .ico (what the Windows tray loads).
-func makeICO() []byte {
+// "pages" (plus a green tick when check is set, shown briefly after a send)
+// and returns it as a BMP-based .ico (what the Windows tray loads).
+func makeICO(check bool) []byte {
 	const n = 32
 	px := make([][4]byte, n*n) // BGRA, top-down
 	set := func(x, y int, b, g, r, a byte) {
@@ -37,6 +38,31 @@ func makeICO() []byte {
 	rect(12, 10, 24, 26, 0xFF, 0xFF, 0xFF)
 	for _, y := range []int{14, 17, 20} {
 		rect(14, y, 22, y+1, 0xD7, 0x78, 0x1E)
+	}
+	if check { // green disc with a white tick, bottom right: "sent"
+		const cx, cy, rad = 22.5, 22.5, 9.5
+		for y := 0; y < n; y++ {
+			for x := 0; x < n; x++ {
+				if math.Hypot(float64(x)-cx, float64(y)-cy) <= rad {
+					set(x, y, 0x4A, 0xA3, 0x16, 0xFF)
+				}
+			}
+		}
+		// Tick: short leg (17,22)->(20,25), long leg (20,25)->(27,18), 2.4 px wide.
+		seg := func(x0, y0, x1, y1 float64) {
+			for y := 0; y < n; y++ {
+				for x := 0; x < n; x++ {
+					px0, py0 := float64(x)-x0, float64(y)-y0
+					dx, dy := x1-x0, y1-y0
+					t := math.Max(0, math.Min(1, (px0*dx+py0*dy)/(dx*dx+dy*dy)))
+					if math.Hypot(px0-t*dx, py0-t*dy) <= 1.2 {
+						set(x, y, 0xFF, 0xFF, 0xFF, 0xFF)
+					}
+				}
+			}
+		}
+		seg(17, 22.5, 20.5, 26)
+		seg(20.5, 26, 27.5, 19)
 	}
 
 	var dib bytes.Buffer

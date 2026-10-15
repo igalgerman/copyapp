@@ -3,7 +3,8 @@ Builds docs\video\install.mp4 and docs\video\use.mp4 by driving the REAL dist\co
   pwsh -File docs\video\make\make.ps1 [-Only install|use|both] [-NoBuild] [-ComposeOnly]
 Needs: ffmpeg (winget install --id Gyan.FFmpeg -e), Node, Windows fonts. Overwrites the Windows clipboard (restored at the end).
 Raw recordings go to %TEMP%\copyapp-video\raw (not in git); final mp4s go to docs\video (not in git; attach them to the Release).
-The exe opens the default browser to the pairing page on start (cannot be disabled); close that tab.
+Data and received files use temporary directories; prompts, browser opening,
+installation and real autostart writes are disabled. Public Wi-Fi name is masked.
 #>
 param([ValidateSet('install','use','both')]$Only = 'both', [switch]$NoBuild, [switch]$ComposeOnly)
 $ErrorActionPreference = 'Stop'
@@ -33,6 +34,8 @@ $sendTo = Join-Path ([Environment]::GetFolderPath('SendTo')) 'Phone (CopyApp).ln
 $hadRun = $null -ne (Get-ItemProperty $runKey -Name CopyApp -ErrorAction SilentlyContinue)
 $hadLnk = Test-Path $sendTo
 $oldAppdata = $env:APPDATA
+$testEnv = @('COPYAPP_PORTABLE','COPYAPP_NO_BROWSER','COPYAPP_SKIP_PROMPTS','COPYAPP_NO_AUTOSTART_WRITE','COPYAPP_RECEIVE_DIR','COPYAPP_DATA_DIR','COPYAPP_WIFI_NAME','COPYAPP_INSTALL_DIR','COPYAPP_DESKTOP_DIR','COPYAPP_STARTMENU_DIR','COPYAPP_SENDTO_DIR')
+$previousEnv = @{}; foreach ($key in $testEnv) { $previousEnv[$key] = [Environment]::GetEnvironmentVariable($key) }
 $scen = if ($Only -eq 'both') { 'install','use' } else { @($Only) }
 try {
     foreach ($s in $scen) {
@@ -41,7 +44,10 @@ try {
             Remove-Item $appdata -Recurse -Force -ErrorAction SilentlyContinue
             New-Item -ItemType Directory -Force $appdata | Out-Null
             $env:APPDATA = $appdata
-            $proc = Start-Process $exe -PassThru
+            $env:COPYAPP_PORTABLE = '1'; $env:COPYAPP_NO_BROWSER = '1'; $env:COPYAPP_SKIP_PROMPTS = 'no'; $env:COPYAPP_NO_AUTOSTART_WRITE = '1'
+            $env:COPYAPP_WIFI_NAME = 'Home Wi-Fi'; $env:COPYAPP_RECEIVE_DIR = "$work\received-$s"; $env:COPYAPP_DATA_DIR = "$appdata\CopyApp"
+            $env:COPYAPP_INSTALL_DIR = "$work\installed"; $env:COPYAPP_DESKTOP_DIR = "$work\desktop"; $env:COPYAPP_STARTMENU_DIR = "$work\startmenu"; $env:COPYAPP_SENDTO_DIR = "$work\sendto"
+            $proc = Start-Process $exe -WindowStyle Hidden -PassThru
             $env:APPDATA = $oldAppdata
             $dd = "$appdata\CopyApp"
             for ($i = 0; $i -lt 60 -and -not ((Test-Path "$dd\port.txt") -and (Test-Path "$dd\local-port.txt")); $i++) { Start-Sleep -Milliseconds 200 }
@@ -56,8 +62,11 @@ try {
 }
 finally {
     $env:APPDATA = $oldAppdata
+    foreach ($key in $testEnv) { [Environment]::SetEnvironmentVariable($key, $previousEnv[$key]) }
     Get-Process copyapp -ErrorAction SilentlyContinue | Stop-Process -Force
     if (-not $hadRun) { Remove-ItemProperty $runKey -Name CopyApp -ErrorAction SilentlyContinue }
     if (-not $hadLnk) { Remove-Item $sendTo -Force -ErrorAction SilentlyContinue }
-    Remove-Item (Join-Path $work 'appdata-*') -Recurse -Force -ErrorAction SilentlyContinue
+    $resolvedWork = [IO.Path]::GetFullPath($work)
+    if (-not $resolvedWork.StartsWith([IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe recording cleanup path' }
+    Get-ChildItem -LiteralPath $resolvedWork -Directory -Filter 'appdata-*' | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 }

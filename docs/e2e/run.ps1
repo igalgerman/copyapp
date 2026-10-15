@@ -6,9 +6,9 @@ End-to-end check of the REAL dist\copyapp.exe (PowerShell 7+, Windows, Node for 
 Runs the exe with APPDATA redirected to a temp dir, pairs like a phone (decodes
 the pairing QR), sends text / a file / a PNG, pushes a file from the PC through
 the real second-instance "Send to" path, and checks auth. It overwrites the
-Windows clipboard. The exe cannot redirect three things, which the script
-removes again at the end: HKCU Run value 'CopyApp', the SendTo shortcut, and
-files in Downloads\CopyApp (only those this test created).
+Windows clipboard. Data, receive folders and shortcuts are isolated in a
+temporary test directory; prompts, browser opening and real autostart writes
+are disabled. It also checks the real global hotkey and saved PC settings.
 Refuses to run if copyapp.exe is already running.
 This covers the HTTP/exe behaviour; the 390x844 PWA UI was driven separately
 with Playwright (HTTPS errors ignored, like a phone tab where the user tapped Advanced > Proceed).
@@ -17,10 +17,10 @@ param([switch]$NoBuild)
 $ErrorActionPreference = 'Stop'
 $root   = (Resolve-Path "$PSScriptRoot\..\..").Path
 $exe    = Join-Path $root 'dist\copyapp.exe'
-$tmp    = Join-Path $env:TEMP 'copyapp-e2e'
+$tmp    = Join-Path $env:TEMP ('copyapp-e2e-' + [guid]::NewGuid().ToString('N'))
 $appdata= Join-Path $tmp 'appdata'
 $files  = Join-Path $tmp 'files'
-$node   = Join-Path $tmp 'node'
+$node   = Join-Path $env:TEMP 'copyapp-e2e-node'
 $script:fails = 0
 function Check($name, $ok, $extra = '') {
     if ($ok) { Write-Host "PASS  $name" } else { Write-Host "FAIL  $name $extra" -ForegroundColor Red; $script:fails++ }
@@ -28,12 +28,14 @@ function Check($name, $ok, $extra = '') {
 if (Get-Process copyapp -ErrorAction SilentlyContinue) { throw 'copyapp.exe is already running; quit it first' }
 
 $runKey  = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-$sendTo  = Join-Path ([Environment]::GetFolderPath('SendTo')) 'Phone (CopyApp).lnk'
-$recv    = Join-Path (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path 'CopyApp'
+$sendTo  = Join-Path $tmp 'sendto\Phone (CopyApp).lnk'
+$recv    = Join-Path $tmp 'received'
 $hadRun  = $null -ne (Get-ItemProperty $runKey -Name CopyApp -ErrorAction SilentlyContinue)
 $hadLnk  = Test-Path $sendTo
 $hadRecv = Test-Path $recv
 $oldAppdata = $env:APPDATA
+$testEnv = @('COPYAPP_PORTABLE','COPYAPP_NO_BROWSER','COPYAPP_SKIP_PROMPTS','COPYAPP_NO_AUTOSTART_WRITE','COPYAPP_RECEIVE_DIR','COPYAPP_DATA_DIR','COPYAPP_WIFI_NAME','COPYAPP_INSTALL_DIR','COPYAPP_DESKTOP_DIR','COPYAPP_STARTMENU_DIR','COPYAPP_SENDTO_DIR')
+$previousEnv = @{}; foreach ($key in $testEnv) { $previousEnv[$key] = [Environment]::GetEnvironmentVariable($key) }
 $proc = $null
 try {
     if (-not $NoBuild) {
@@ -59,7 +61,10 @@ try {
 
     # start the real exe
     $env:APPDATA = $appdata
-    $proc = Start-Process $exe -PassThru
+    $env:COPYAPP_PORTABLE = '1'; $env:COPYAPP_NO_BROWSER = '1'; $env:COPYAPP_SKIP_PROMPTS = 'no'; $env:COPYAPP_NO_AUTOSTART_WRITE = '1'
+    $env:COPYAPP_RECEIVE_DIR = $recv; $env:COPYAPP_DATA_DIR = "$appdata\CopyApp"; $env:COPYAPP_WIFI_NAME = 'Home Wi-Fi'
+    $env:COPYAPP_INSTALL_DIR = "$tmp\installed"; $env:COPYAPP_DESKTOP_DIR = "$tmp\desktop"; $env:COPYAPP_STARTMENU_DIR = "$tmp\startmenu"; $env:COPYAPP_SENDTO_DIR = "$tmp\sendto"
+    $proc = Start-Process $exe -WindowStyle Hidden -PassThru
     $dd = "$appdata\CopyApp"
     for ($i = 0; $i -lt 50 -and -not ((Test-Path "$dd\port.txt") -and (Test-Path "$dd\local-port.txt")); $i++) { Start-Sleep -Milliseconds 200 }
     $port = (Get-Content "$dd\port.txt").Trim(); $lport = (Get-Content "$dd\local-port.txt").Trim()
@@ -99,6 +104,8 @@ try {
     Check '/ca.crt closed without cookie after pairing' ((Invoke-WebRequest "$B/ca.crt" @opt).StatusCode -eq 404)
     Check '/ca.crt with session' ((Invoke-WebRequest "$B/ca.crt" -Headers $hdr @opt).StatusCode -eq 200)
     $st = Invoke-RestMethod "$B/status" -Headers $hdr -SkipCertificateCheck
+    Check '/status defaults to 2 GiB' ($st.maxBytes -eq 2147483648)
+    Check '/status defaults to clipboard' ($st.receiveMode -eq 'clipboard')
     Check '/status has a short certificate code' ("$($st.shortFingerprint)".Length -ge 6) "$($st.shortFingerprint)"
     $r = Invoke-WebRequest "$B/" -Headers $hdr @opt; Check 'PWA index served' ($r.StatusCode -eq 200 -and $r.Content -match 'CopyApp')
     # browser-tab first: no certificate step in the main flow, the app upgrade is optional (Settings)
@@ -109,7 +116,7 @@ try {
     $bi = $pg.IndexOf('<section class="before"'); $qi = $pg.IndexOf('<section class="qrbox"')
     Check 'pairing page: open "Before you scan" box above the QR with 3 points' ($bi -ge 0 -and $bi -lt $qi -and ([regex]::Matches($pg, '<li class="b">')).Count -eq 3 -and $pg.Substring($bi, $qi - $bi) -notmatch '<details')
     Check 'pairing page: collapsed "Can''t open the page?" troubleshooting' ($pg -match '<details id="trouble" class="trouble">')
-    $ssid = ''; foreach ($ln in (netsh wlan show interfaces)) { if ($ln -match '^\s*SSID\s*:\s*(.+?)\s*$') { $ssid = $Matches[1]; break } }
+    $ssid = 'Home Wi-Fi'
     if ($ssid) { Check "pairing page names this PC's Wi-Fi ($ssid)" ($pg -match 'data-k="pair.b1Named"' -and $pg.Contains('<bdi>' + [System.Net.WebUtility]::HtmlEncode($ssid) + '</bdi>')) }
     else { Check 'pairing page: generic same-Wi-Fi point (no Wi-Fi name known)' ($pg -match 'data-k="pair.b1"') }
     Check 'pairing page: short code in collapsed details, optional app section collapsed' ($pg -match '<details id="careful">' -and $pg -match '<details id="optional">' -and $pg -notmatch '<details open' -and $pg -match [regex]::Escape("$($st.shortFingerprint)"))
@@ -122,6 +129,18 @@ try {
     Check 'send text -> 200' ($r.StatusCode -eq 200) $r.Content
     Start-Sleep -Milliseconds 500
     Check 'Windows clipboard has the text' ((Get-Clipboard) -eq $text) (Get-Clipboard)
+
+    # Saved PC destination settings and explicit per-send override.
+    $settings = @{ receiveMode = 'folder'; saveDir = $recv; maxBytes = 524288000 } | ConvertTo-Json
+    $r = Invoke-WebRequest "$L/local/settings" -Headers $lh -Method POST -ContentType application/json -Body $settings @opt
+    Check 'local settings changes receive mode and limit' ($r.StatusCode -eq 200)
+    $st2 = Invoke-RestMethod "$B/status" -Headers $hdr -SkipCertificateCheck
+    Check 'phone sees updated PC default and limit' ($st2.receiveMode -eq 'folder' -and $st2.maxBytes -eq 524288000)
+    $r = Invoke-WebRequest "$B/send" -Headers $hdr -Method POST -ContentType application/json -Body '{"text":"saved as a file e2e","mode":"auto"}' @opt
+    Check 'auto destination respects saved folder default' ($r.StatusCode -eq 200 -and ($r.Content | ConvertFrom-Json).where -eq 'folder')
+    $r = Invoke-WebRequest "$B/send" -Headers $hdr -Method POST -ContentType application/json -Body '{"text":"explicit clipboard e2e","mode":"clipboard"}' @opt
+    Check 'explicit clipboard overrides folder default' ($r.StatusCode -eq 200 -and ($r.Content | ConvertFrom-Json).where -eq 'clipboard')
+    $null = Invoke-WebRequest "$L/local/settings" -Headers $lh -Method POST -ContentType application/json -Body '{"receiveMode":"clipboard","maxBytes":2147483648}' @opt
 
     # share-target fallback (POST /share, used when the service worker is not active)
     Check 'no cookie POST /share -> 401' ((Invoke-WebRequest "$B/share" -Method POST -Body '{"text":"x"}' -ContentType application/json @opt).StatusCode -eq 401)
@@ -148,13 +167,29 @@ try {
     Check 'Windows clipboard has the 40x30 image' ("$img" -eq '40x30 R=200') $img
 
     # PC -> phone through the real second-instance path (Explorer "Send to")
-    $p2 = Start-Process $exe -ArgumentList "`"$files\fromPC.txt`"" -PassThru -Wait
+    $p2 = Start-Process $exe -ArgumentList "`"$files\fromPC.txt`"" -WindowStyle Hidden -PassThru -Wait
     Check 'second instance exited 0' ($p2.ExitCode -eq 0)
     $ev = curl.exe -sk --max-time 3 -H "Cookie: $($hdr.Cookie)" "$B/events"
     Check 'pushed file is in the SSE stream' ("$ev" -match 'fromPC\.txt')
     $id = [regex]::Match("$ev", '"id":"([0-9a-f]+)"').Groups[1].Value
     $r = Invoke-WebRequest "$B/item/$id" -Headers $hdr @opt
     Check 'pushed item downloads with its content' ("$($r.Content)" -eq 'pushed from PC e2e')
+    $range = Invoke-WebRequest "$B/item/$id" -Headers (@{ Cookie = $hdr.Cookie; Range = 'bytes=0-5' }) @opt
+    Check 'disk-backed PC file supports partial download' ($range.StatusCode -eq 206 -and "$($range.Content)" -eq 'pushed')
+
+    # Exercise the registered global hotkey rather than a substitute HTTP call.
+    $pcState = Invoke-RestMethod "$L/local/state" -Headers $lh
+    Check 'control reports an available global hotkey' ($pcState.hotkey -match '^Ctrl\+Alt\+(Shift\+)?C$') $pcState.hotkey
+    Set-Clipboard 'hotkey-real-exe-e2e'
+    Add-Type -Namespace CopyAppE2E -Name Keys -MemberDefinition '[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, System.UIntPtr extra);'
+    $keys = @(0x11, 0x12); if ($pcState.hotkey -match 'Shift') { $keys += 0x10 }; $keys += 0x43
+    foreach ($key in $keys) { [CopyAppE2E.Keys]::keybd_event($key, 0, 0, [UIntPtr]::Zero) }
+    Start-Sleep -Milliseconds 120
+    [array]::Reverse($keys)
+    foreach ($key in $keys) { [CopyAppE2E.Keys]::keybd_event($key, 0, 2, [UIntPtr]::Zero) }
+    Start-Sleep -Milliseconds 800
+    $hotEvents = curl.exe -sk --max-time 3 -H "Cookie: $($hdr.Cookie)" "$B/events"
+    Check 'global hotkey puts real clipboard text in phone inbox' ("$hotEvents" -match 'hotkey-real-exe-e2e')
 
     # loopback-only endpoints: 403 without the local key, 200 with it (header or cookie)
     foreach ($u in '/pairing', '/pairing/status') {
@@ -176,20 +211,26 @@ try {
 
     # session survives a restart; unpair revokes
     Stop-Process $proc -Force; Start-Sleep 1
-    $proc = Start-Process $exe -PassThru
+    $proc = Start-Process $exe -WindowStyle Hidden -PassThru
     Start-Sleep 3
+    $L = "http://127.0.0.1:$((Get-Content "$dd\local-port.txt").Trim())"
     Check 'session survives restart' ((Invoke-WebRequest "$B/status" -Headers $hdr @opt).StatusCode -eq 200)
+    $state = Invoke-RestMethod "$L/local/state" -Headers @{ 'X-CopyApp' = (Get-Content "$dd\local.key").Trim() }
+    Check 'settings persist across restart' ($state.settings.maxBytes -eq 2147483648 -and $state.settings.saveDir -eq $recv)
     Check 'unpair -> 204' ((Invoke-WebRequest "$B/unpair" -Method POST -Headers $hdr @opt).StatusCode -eq 204)
     Check 'after unpair /status -> 401' ((Invoke-WebRequest "$B/status" -Headers $hdr @opt).StatusCode -eq 401)
 }
 finally {
     $env:APPDATA = $oldAppdata
+    foreach ($key in $testEnv) { [Environment]::SetEnvironmentVariable($key, $previousEnv[$key]) }
     Get-Process copyapp -ErrorAction SilentlyContinue | Stop-Process -Force
     if (-not $hadRun) { Remove-ItemProperty $runKey -Name CopyApp -ErrorAction SilentlyContinue }
     if (-not $hadLnk) { Remove-Item $sendTo -Force -ErrorAction SilentlyContinue }
     foreach ($f in 'note-e2e.txt', 'pic-e2e.png', 'fromPC.txt') { Remove-Item (Join-Path $recv $f) -Force -ErrorAction SilentlyContinue }
     if (-not $hadRecv -and (Test-Path $recv) -and -not (Get-ChildItem $recv)) { Remove-Item $recv -Force }
-    Remove-Item $appdata, $files -Recurse -Force -ErrorAction SilentlyContinue
+    $resolvedTmp = [IO.Path]::GetFullPath($tmp)
+    if (-not $resolvedTmp.StartsWith([IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe e2e cleanup path' }
+    Remove-Item -LiteralPath $resolvedTmp -Recurse -Force -ErrorAction SilentlyContinue
 }
 if ($script:fails) { Write-Host "$($script:fails) check(s) failed" -ForegroundColor Red; exit 1 }
 Write-Host 'All checks passed' -ForegroundColor Green

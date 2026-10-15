@@ -14,6 +14,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unicode/utf16"
@@ -38,6 +40,8 @@ var ErrNotPNG = errors.New("pc: image is not a valid PNG")
 type PC struct {
 	// NotifyFunc, when set, replaces the PowerShell toast (e.g. a tray balloon).
 	NotifyFunc func(title, msg string)
+	// Logf receives one line per toast (shown or why not). Never the text.
+	Logf func(format string, args ...any)
 }
 
 // New initializes clipboard access.
@@ -138,18 +142,38 @@ func (p *PC) Notify(title, msg string) {
 		p.NotifyFunc(title, msg)
 		return
 	}
-	go func() { _ = toastCmd(title, msg).Run() }()
+	go func() {
+		out, err := toastCmd(title, msg).CombinedOutput()
+		if p.Logf == nil {
+			return
+		}
+		if err != nil {
+			p.Logf("toast: notifier failed: %v: %s", err, truncate(strings.TrimSpace(string(out)), 300))
+		} else {
+			p.Logf("toast: shown")
+		}
+	}()
 }
 
 func toastCmd(title, msg string) *exec.Cmd {
-	u := utf16.Encode([]rune(toastScript))
+	cmd := psCmd(toastScript, false)
+	cmd.Env = append(os.Environ(), "COPYAPP_TOAST_TITLE="+title, "COPYAPP_TOAST_MSG="+msg)
+	return cmd
+}
+
+// psCmd runs a Windows PowerShell 5.1 script (passed encoded, so no quoting
+// issues) without a window. sta is needed for WinForms dialogs.
+func psCmd(script string, sta bool) *exec.Cmd {
+	u := utf16.Encode([]rune(script))
 	b := make([]byte, 2*len(u))
 	for i, c := range u {
 		b[2*i], b[2*i+1] = byte(c), byte(c>>8)
 	}
-	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-		"-EncodedCommand", base64.StdEncoding.EncodeToString(b))
-	cmd.Env = append(os.Environ(), "COPYAPP_TOAST_TITLE="+title, "COPYAPP_TOAST_MSG="+msg)
+	args := []string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass"}
+	if sta {
+		args = append(args, "-STA")
+	}
+	cmd := exec.Command("powershell.exe", append(args, "-EncodedCommand", base64.StdEncoding.EncodeToString(b))...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 	return cmd
 }
@@ -213,8 +237,19 @@ func PrimaryIP() net.IP {
 	return ip
 }
 
-// SetAutostart adds or removes CopyApp from HKCU\...\Run.
+// noRunWrite: COPYAPP_NO_AUTOSTART_WRITE=1 keeps the Run entry in memory
+// (tests and the e2e script must not touch the user's registry).
+var (
+	noRunWrite = os.Getenv("COPYAPP_NO_AUTOSTART_WRITE") != ""
+	fakeRun    atomic.Bool
+)
+
+// SetAutostart adds or removes CopyApp (this exe) from HKCU\...\Run.
 func SetAutostart(on bool) error {
+	if noRunWrite {
+		fakeRun.Store(on)
+		return nil
+	}
 	k, _, err := registry.CreateKey(registry.CURRENT_USER, runKey, registry.SET_VALUE)
 	if err != nil {
 		return err
@@ -236,6 +271,9 @@ func SetAutostart(on bool) error {
 
 // AutostartEnabled reports whether the Run entry exists.
 func AutostartEnabled() bool {
+	if noRunWrite {
+		return fakeRun.Load()
+	}
 	k, err := registry.OpenKey(registry.CURRENT_USER, runKey, registry.QUERY_VALUE)
 	if err != nil {
 		return false
@@ -250,7 +288,12 @@ var procGetOEMCP = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetOEMCP")
 // WiFiName returns the SSID of the Wi-Fi network this PC is connected to, or
 // "" when it is unknown, disconnected or the PC is wired only. It runs
 // `netsh wlan show interfaces` (about 50 ms, no window).
+// COPYAPP_WIFI_NAME overrides it (screenshots, videos and tests must not show
+// the real network name).
 func WiFiName() string {
+	if v := os.Getenv("COPYAPP_WIFI_NAME"); v != "" {
+		return v
+	}
 	c, cancel := ctx()
 	defer cancel()
 	cmd := exec.CommandContext(c, "netsh.exe", "wlan", "show", "interfaces")

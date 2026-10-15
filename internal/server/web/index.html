@@ -135,6 +135,15 @@
   </main>
 
   <footer class="dock">
+    <!-- Where things sent from this phone land on the PC (all dock actions). Synced with the Type sheet. -->
+    <div class="dest" role="radiogroup" data-i18n-attr="aria-label:dest.aria">
+      <span class="dest-label" aria-hidden="true" data-i18n="dest.label"></span>
+      <div class="seg seg-sm">
+        <label><input type="radio" name="dest-dock" value="auto" class="vh"><span data-i18n="dest.auto"></span></label>
+        <label><input type="radio" name="dest-dock" value="clipboard" class="vh"><span data-i18n="dest.clipboard"></span></label>
+        <label><input type="radio" name="dest-dock" value="file" class="vh"><span data-i18n="dest.file"></span></label>
+      </div>
+    </div>
     <button class="send-clip" type="button" id="send-clip">
       <span class="send-clip-icon" aria-hidden="true"><svg class="ic"><use href="#i-up"/></svg></span>
       <span class="send-clip-text">
@@ -162,6 +171,45 @@
 <dialog class="sheet" id="sheet-settings" aria-labelledby="settings-title">
   <div class="sheet-grip" aria-hidden="true"></div>
   <h2 class="sheet-title" id="settings-title" data-i18n="settings.title"></h2>
+
+  <h3 class="sheet-sub" data-i18n="settings.secSend"></h3>
+  <div class="sheet-list">
+    <div class="sheet-item sheet-item-static" id="pcmode-row">
+      <svg class="ic" aria-hidden="true"><use href="#i-pc"/></svg>
+      <span><b data-i18n="settings.pcMode"></b><small data-i18n="settings.pcModeSub"></small></span>
+      <span class="chip" id="pcmode-chip" data-i18n="pcMode.unknown"></span>
+    </div>
+  </div>
+
+  <h3 class="sheet-sub" data-i18n="settings.secReceive"></h3>
+  <div class="sheet-list">
+    <div class="sheet-item sheet-item-static sheet-opt">
+      <div class="opt-head">
+        <svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg>
+        <b id="rx-text-label" data-i18n="settings.rxText"></b>
+      </div>
+      <div class="seg" role="radiogroup" aria-labelledby="rx-text-label">
+        <label><input type="radio" name="rx-text" value="show" class="vh"><span data-i18n="rx.show"></span></label>
+        <label><input type="radio" name="rx-text" value="copy" class="vh"><span data-i18n="rx.copy"></span></label>
+      </div>
+    </div>
+    <div class="sheet-item sheet-item-static sheet-opt">
+      <div class="opt-head">
+        <svg class="ic" aria-hidden="true"><use href="#i-download"/></svg>
+        <b id="rx-file-label" data-i18n="settings.rxFile"></b>
+      </div>
+      <div class="seg" role="radiogroup" aria-labelledby="rx-file-label">
+        <label><input type="radio" name="rx-file" value="show" class="vh"><span data-i18n="rx.show"></span></label>
+        <label><input type="radio" name="rx-file" value="download" class="vh"><span data-i18n="rx.download"></span></label>
+      </div>
+    </div>
+    <div class="sheet-item sheet-item-static">
+      <svg class="ic" aria-hidden="true"><use href="#i-file"/></svg>
+      <span><b data-i18n="settings.phoneFiles"></b><small data-i18n="settings.phoneFilesSub"></small></span>
+    </div>
+  </div>
+
+  <h3 class="sheet-sub" data-i18n="settings.secConn"></h3>
   <div class="sheet-list">
     <div class="sheet-item sheet-item-static" id="verify-row">
       <svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg>
@@ -230,6 +278,14 @@
   <form id="paste-form" class="paste-form">
     <label for="paste-text" class="vh" data-i18n="paste.label"></label>
     <textarea id="paste-text" rows="5" dir="auto" data-i18n-attr="placeholder:paste.ph" autocomplete="off"></textarea>
+    <div class="dest dest-sheet" role="radiogroup" data-i18n-attr="aria-label:dest.aria">
+      <span class="dest-label" aria-hidden="true" data-i18n="dest.label"></span>
+      <div class="seg seg-sm">
+        <label><input type="radio" name="dest-paste" value="auto" class="vh"><span data-i18n="dest.auto"></span></label>
+        <label><input type="radio" name="dest-paste" value="clipboard" class="vh"><span data-i18n="dest.clipboard"></span></label>
+        <label><input type="radio" name="dest-paste" value="file" class="vh"><span data-i18n="dest.file"></span></label>
+      </div>
+    </div>
     <div class="paste-actions">
       <button type="button" class="btn btn-quiet" data-close data-i18n="cancel"></button>
       <button type="submit" class="btn btn-primary">

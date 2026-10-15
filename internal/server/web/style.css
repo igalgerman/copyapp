@@ -391,6 +391,7 @@ body .tip-card .ic { stroke: currentColor; }
 .progress-track { height: 8px; border-radius: 99px; background: rgba(255, 255, 255, .22); overflow: hidden; }
 .progress-fill { height: 100%; width: 0; background: var(--butter); border-radius: inherit; transition: width .2s linear; }
 .progress-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; font-size: 14px; color: var(--on-cobalt-2); }
+.progress-row > span { min-width: 0; font-variant-numeric: tabular-nums; }
 .progress-pct { font: 750 18px/1 var(--display); color: var(--on-cobalt); font-variant-numeric: tabular-nums; }
 .out-btn {
   min-height: 44px; padding: 0 14px; border-radius: 12px; border: 0;
@@ -443,6 +444,27 @@ body .tip-card .ic { stroke: currentColor; }
 .send-clip.is-sent .send-clip-icon { animation: pop .5s var(--ease); }
 @keyframes lift { 0% { transform: translateY(6px); opacity: 0; } 40% { opacity: 1; } 100% { transform: translateY(-8px); opacity: 0; } }
 @keyframes pop { 40% { transform: scale(1.15); } }
+
+/* segmented choice (radio inputs inside labels) */
+.seg {
+  display: flex; gap: 2px; padding: 3px; min-width: 0;
+  border-radius: 13px; background: var(--paper-2); border: 1px solid var(--line);
+}
+.seg label {
+  flex: 1 1 0; min-width: 0; min-height: 40px; padding: 4px 8px;
+  display: grid; place-items: center; text-align: center;
+  border-radius: 10px; cursor: pointer;
+  font-weight: 650; font-size: 14px; line-height: 1.2; color: var(--ink-2);
+  transition: background-color .15s, color .15s;
+}
+.seg label:has(input:checked) { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(21, 27, 51, .18); }
+@media (prefers-color-scheme: dark) { .seg label:has(input:checked) { background: var(--cobalt); color: var(--on-cobalt); box-shadow: none; } }
+.seg label:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 1px; }
+.seg-sm label { min-height: 34px; padding: 3px 9px; font-size: 13.5px; flex: 1 1 auto; }
+.dest { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.dest-label { flex: none; font-size: 13.5px; font-weight: 650; color: var(--ink-2); }
+.dest .seg { flex: 1; }
+.dest-sheet { margin-top: 12px; }
 
 .dock-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .dock-btn {
@@ -507,6 +529,30 @@ body .tip-card .ic { stroke: currentColor; }
 .sheet-item small { color: var(--ink-3); font-size: 13.5px; }
 .sheet-item .ic { color: var(--accent-text); }
 .sheet-item-danger b, .sheet-item-danger .ic { color: var(--danger) !important; }
+.sheet-sub {
+  margin: 22px 4px 0; font: 700 12.5px/1.3 var(--body); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);
+}
+:lang(he) .sheet-sub { letter-spacing: 0; }
+.sheet-sub + .sheet-list { margin-top: 8px; }
+.sheet-item > span:not(.chip) { flex: 1; min-width: 0; }
+.chip {
+  flex: none; padding: 6px 12px; border-radius: 999px;
+  background: var(--cobalt-soft); color: var(--cobalt-ink);
+  font-size: 13.5px; font-weight: 700; white-space: nowrap;
+}
+.sheet-opt { display: grid; gap: 10px; align-items: stretch; }
+.opt-head { display: flex; align-items: center; gap: 14px; }
+.sheet-opt .seg { background: var(--surface); }
+.sheet-opt .seg label:has(input:checked) { background: var(--cobalt); color: var(--on-cobalt); box-shadow: none; }
+.card-note { padding: 0 16px 12px; font-size: 14px; color: var(--ink-3); }
+.download-slot { padding-top: 10px; }
+.download-slot .progress { padding: 0 16px 16px; }
+.download-slot .progress-track { background: var(--paper-2); }
+.download-slot .progress-fill { background: var(--cobalt); }
+.download-slot .progress-row, .download-slot .progress-pct { color: var(--ink-2); }
+.download-slot .out-btn { background: var(--paper-2); color: var(--ink); }
+.file-sub .dot::before { content: "·"; margin-inline: 6px; }
+.prog-detail { min-width: 0; }
 
 .cert-steps { list-style: none; padding: 0; margin: 22px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 18px 12px; }
 .cert-steps li { display: grid; gap: 10px; align-content: start; }

@@ -12,9 +12,9 @@ CopyApp lets you copy and paste between your Windows PC and your Android phone.
 
 ## Download
 
-**Download `copyapp.exe` from the latest Release:**
+**Download `copyapp.exe` from the CopyApp website:**
 
-https://github.com/igalgerman/copyapp/releases/latest
+https://copyapp.igalg.chatgpt.site/
 
 ---
 
@@ -26,7 +26,7 @@ https://github.com/igalgerman/copyapp/releases/latest
 > - A **guest Wi-Fi** or **"AP/client isolation"** on the router blocks the connection. Use the main Wi-Fi.
 > - Your browser will say **"Your connection is not private"**. That's expected: tap **Advanced → Proceed** (this is your own PC on your own Wi-Fi).
 
-1. **Download and run `copyapp.exe`** on your PC. A pairing page with a QR code opens, and a CopyApp icon appears in the tray (near the clock).
+1. **Download and run `copyapp.exe`** on your PC. CopyApp installs for your Windows user and creates Desktop and Start Menu shortcuts. Choose Yes or No when asked to start with Windows. The control window opens with status, settings and a pairing QR code; the tray icon stays near the clock.
 2. **Scan the QR code** with your phone's camera and open the link.
 3. **If the browser says the connection is not private, tap Advanced → Proceed.** This is expected: the PC is on your own Wi-Fi.
 
@@ -36,21 +36,23 @@ That's it. CopyApp is now open in your phone's browser, ready to send and receiv
 
 ### Optional: make it a real app (about 1 minute)
 
-Want CopyApp in Android's **Share** menu and no "Not secure" warning? On the phone, open **⋯ → Make it a real app** and follow the steps: check the code matches the one on your PC's pairing page, download the certificate, install it once in Android Settings, then choose **Install app** in Chrome's ⋮ menu.
+Want CopyApp in Android's **Share** menu and no "Not secure" warning? On the phone, open **⋯ → Make it a real app** and follow the steps: on the PC choose **Pair phone** in the tray and open **Certificate code**, then check that both codes match, download the certificate, install it once in Android Settings, then choose **Install app** in Chrome's ⋮ menu.
 
 ---
 ## How to use it
 
 **Phone to PC**
-- Open CopyApp on your phone and tap **Send clipboard**, **Photo** or **File**. (If the browser won't share the clipboard, a text box opens: paste there and tap Send.)
+- Choose **Auto**, **Clipboard** or **File**, then tap **Send clipboard**, **Photo** or **File**. Auto follows your saved PC destination; Clipboard handles text and PNG images; File saves to the chosen folder. (If the browser won't share the clipboard, a text box opens: paste there and tap Send.)
 - After the optional upgrade: use the Android **Share** menu on a text, image, or file, and choose **CopyApp**.
 
 **PC to phone**
 - Press **Ctrl+Alt+C** to send what is on your PC clipboard to your phone.
-- Or right-click the CopyApp tray icon and choose **Send clipboard to phone**.
+- Or use **Send clipboard to phone** in the tray menu. If Ctrl+Alt+C is unavailable, the PC shows the fallback **Ctrl+Alt+Shift+C**.
 - Or right-click a file, choose **Send to**, then **Phone (CopyApp)**.
 
 ---
+
+Open the **CopyApp Desktop shortcut** to change the receive destination, folder, file limit, language, or Start with Windows. Phone Settings can remember automatic text copying and file downloads. To remove CopyApp, choose **Uninstall** in the PC control window.
 
 ## Good to know (limits)
 
@@ -58,7 +60,7 @@ Want CopyApp in Android's **Share** menu and no "Not secure" warning? On the pho
 - It only works when your PC and phone are on the **same Wi-Fi**.
 - It works with **one phone** paired to one PC.
 - Items are kept for **10 minutes**.
-- The largest item you can send is **200 MB**.
+- The default limit is **2 GiB per file**. Change it in the PC control window; large files stream to disk.
 - The app speaks **Hebrew** (default), **Russian** and **English**. Switch with **עב / РУ / EN** at the top of the phone screen, and with **שפה / Язык / Language** in the tray menu.
 
 ---
@@ -68,7 +70,7 @@ Want CopyApp in Android's **Share** menu and no "Not secure" warning? On the pho
 - All data sent between your PC and phone is **encrypted**.
 - The pairing QR code can be used **only once** and works for **10 minutes**.
 - CopyApp only talks on **your local network**. It does not open your PC to the internet.
-- Received files are saved to **Downloads\CopyApp** on your PC.
+- Received files are saved to **Downloads\CopyApp** by default. Choose another folder in the PC control window.
 - You can **unpair at any time**: right-click the tray icon and choose **Re-pair phone**.
 
 ---
@@ -87,10 +89,10 @@ Want CopyApp in Android's **Share** menu and no "Not secure" warning? On the pho
 
 ## Videos
 
-- [Install video](docs/video/install.mp4)
-- [Use video](docs/video/use.mp4)
+- [Install video](https://copyapp.igalg.chatgpt.site/assets/install.mp4)
+- [Use video](https://copyapp.igalg.chatgpt.site/assets/use.mp4)
 
-These videos are also attached to the Release.
+The website also includes these videos.
 
 ---
 
@@ -101,4 +103,4 @@ go build -ldflags "-H=windowsgui -s -w" -o dist\copyapp.exe ./cmd/copyapp
 go test ./...
 ```
 
-SHA-256: (see Release notes)
+SHA-256: see [release notes](docs/RELEASE_NOTES.md)

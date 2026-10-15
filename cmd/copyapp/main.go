@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -23,19 +25,21 @@ import (
 	"golang.design/x/hotkey"
 	"golang.org/x/sys/windows"
 
+	"github.com/igalgerman/copyapp/internal/applog"
 	"github.com/igalgerman/copyapp/internal/auth"
 	"github.com/igalgerman/copyapp/internal/i18n"
+	"github.com/igalgerman/copyapp/internal/install"
 	"github.com/igalgerman/copyapp/internal/pc"
 	"github.com/igalgerman/copyapp/internal/secret"
 	"github.com/igalgerman/copyapp/internal/server"
+	"github.com/igalgerman/copyapp/internal/settings"
 	"github.com/igalgerman/copyapp/internal/store"
 	"github.com/igalgerman/copyapp/internal/tlsutil"
 )
 
 const (
-	defaultPort    = 8443
-	sendFilePath   = "/local/send-file"
-	sendToLinkName = "Phone (CopyApp).lnk"
+	defaultPort  = 8443
+	sendFilePath = "/local/send-file"
 
 	// idleTimeout closes idle keep-alive connections. It does not cut active
 	// requests: SSE (/events) and big uploads/downloads run inside a handler
@@ -44,12 +48,19 @@ const (
 )
 
 var (
-	dataDir  string
-	srv      *server.Server
-	sess     *auth.Auth
-	machine  *pc.PC
-	firstRun bool
-	localKey string // per-launch secret for the loopback routes (see secret.LocalKeyFile)
+	dataDir      string
+	srv          *server.Server
+	sess         *auth.Auth
+	machine      *pc.PC
+	firstRun     bool
+	localKey     string // per-launch secret for the loopback routes (see secret.LocalKeyFile)
+	prefs        *settings.Store
+	activeHotkey atomic.Value
+	trayReady    atomic.Bool
+	flashMu      sync.Mutex
+	refreshTray  = make(chan struct{}, 1)
+	sendMu       sync.Mutex
+	openOnLaunch bool
 )
 
 func main() {
@@ -59,22 +70,48 @@ func main() {
 		appdata = filepath.Join(h, "AppData", "Roaming")
 	}
 	dataDir = filepath.Join(appdata, "CopyApp")
+	if d := os.Getenv("COPYAPP_DATA_DIR"); d != "" {
+		dataDir = d
+	}
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		log.Fatal(err)
 	}
-	if lf, err := os.OpenFile(filepath.Join(dataDir, "copyapp.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err == nil {
+	if lf, err := applog.Open(filepath.Join(dataDir, "copyapp.log"), applog.DefaultMax); err == nil {
 		log.SetOutput(lf)
+		defer lf.Close()
 	}
 
 	i18n.Load(dataDir)
+	receiveDir := pc.ReceivedDir()
+	if d := os.Getenv("COPYAPP_RECEIVE_DIR"); d != "" {
+		receiveDir = d
+	}
+	var err error
+	prefs, err = settings.Load(dataDir, receiveDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+	i18n.Set(prefs.Get().Language)
+	activeHotkey.Store("")
 
 	var fileArg string
-	if len(os.Args) > 1 {
-		fileArg = os.Args[1]
+	for _, arg := range os.Args[1:] {
+		switch arg {
+		case "--open":
+			openOnLaunch = true
+		case "--portable":
+			os.Setenv("COPYAPP_PORTABLE", "1")
+		case "--no-browser":
+			os.Setenv("COPYAPP_NO_BROWSER", "1")
+		default:
+			if fileArg == "" {
+				fileArg = arg
+			}
+		}
 	}
 
 	// Single instance.
-	h, err := windows.CreateMutex(nil, false, windows.StringToUTF16Ptr(`Local\CopyAppSingleton`))
+	h, err := instanceMutex()
 	if err == syscall.ERROR_ALREADY_EXISTS {
 		if h != 0 {
 			windows.CloseHandle(h)
@@ -83,6 +120,32 @@ func main() {
 		return
 	} else if err != nil {
 		log.Fatal(err)
+	}
+	defer func() {
+		if h != 0 {
+			windows.CloseHandle(h)
+		}
+	}()
+
+	// Install into a stable per-user location, then run that copy so startup
+	// and all shortcuts remain valid after the download is moved or removed.
+	if os.Getenv("COPYAPP_PORTABLE") == "" {
+		exe, e := os.Executable()
+		paths := install.Default()
+		if e == nil && !install.SamePath(exe, paths.Exe()) {
+			if _, e = install.Install(paths, exe); e == nil {
+				args := append([]string{"--open"}, os.Args[1:]...)
+				cmd := exec.Command(paths.Exe(), args...)
+				cmd.Dir = paths.InstallDir
+				windows.CloseHandle(h)
+				h = 0
+				if e = cmd.Start(); e == nil {
+					return
+				}
+			}
+			log.Printf("self-install: %v", e)
+			pc.Info("CopyApp", i18n.T("inst.fail", e), i18n.Lang() == "he")
+		}
 	}
 
 	_, statErr := os.Stat(filepath.Join(dataDir, "port.txt"))
@@ -127,9 +190,19 @@ func main() {
 			}
 			return "https://" + net.JoinHostPort(ip, strconv.Itoa(httpsPort))
 		},
-		Logf:        log.Printf,
-		LocalSecret: localKey,
-		WiFiName:    pc.WiFiName,
+		Logf:         log.Printf,
+		LocalSecret:  localKey,
+		WiFiName:     pc.WiFiName,
+		Settings:     prefs,
+		ChooseFolder: func(current string) (string, error) { return pc.ChooseFolder(i18n.T("pick.folder"), current) },
+		OpenFolder:   pc.OpenFolder,
+		Uninstall:    uninstallApp,
+		Autostart:    pc.AutostartEnabled,
+		SetAutostart: pc.SetAutostart,
+		OnSettings:   func(old, cur settings.Settings) { signalTrayRefresh() },
+		LogPath:      filepath.Join(dataDir, "copyapp.log"),
+		Hotkey:       func() string { return activeHotkey.Load().(string) },
+		Version:      "1.0.0",
 	})
 
 	go func() {
@@ -139,16 +212,27 @@ func main() {
 	go func() {
 		mux := http.NewServeMux()
 		mux.HandleFunc("POST "+sendFilePath, handleSendFile)
+		mux.HandleFunc("POST /local/quit", func(w http.ResponseWriter, r *http.Request) {
+			if !server.LocalAllowed(r, localKey) {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			go func() { time.Sleep(200 * time.Millisecond); systray.Quit() }()
+		})
 		mux.Handle("/", srv)
 		s := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: idleTimeout, ErrorLog: log.Default()}
 		log.Printf("loopback: %v", s.Serve(loopLn))
 	}()
 
-	if firstRun {
-		if err := pc.SetAutostart(true); err != nil {
+	if !prefs.Get().AutostartAsked {
+		on := pc.Ask("CopyApp", i18n.T("ask.autostart"), i18n.Lang() == "he", false)
+		if err := pc.SetAutostart(on); err != nil {
 			log.Printf("autostart: %v", err)
 		}
-		go createSendToShortcut()
+		if _, err := prefs.Update(func(st *settings.Settings) { st.AutostartAsked = true }); err != nil {
+			log.Printf("save startup choice: %v", err)
+		}
 	}
 	if fileArg != "" {
 		go sendFile(fileArg)
@@ -157,9 +241,48 @@ func main() {
 	systray.Run(onReady, func() {})
 }
 
-// listenRemembered listens on the port saved in dir\name if free, otherwise on
-// the preferred port (or the next free ones when scan is set; any free port
-// otherwise) and saves the result.
+// instanceMutex acquires the singleton, optionally stopping an older installed
+// version so a newly downloaded executable can replace it.
+func instanceMutex() (windows.Handle, error) {
+	h, err := windows.CreateMutex(nil, false, windows.StringToUTF16Ptr(`Local\CopyAppSingleton`))
+	if err != syscall.ERROR_ALREADY_EXISTS || os.Getenv("COPYAPP_PORTABLE") != "" {
+		return h, err
+	}
+	exe, e := os.Executable()
+	installed := install.Default().Exe()
+	if e != nil || install.SamePath(exe, installed) || install.SameFile(exe, installed) {
+		return h, err
+	}
+	// An updated download asks the installed instance to stop through the
+	// authenticated loopback endpoint, then acquires the singleton before copying.
+	key, e := secret.ReadLocalKey(dataDir)
+	port := readPort("local-port.txt")
+	if e != nil || port == 0 {
+		return h, err
+	}
+	req, _ := http.NewRequest(http.MethodPost, "http://127.0.0.1:"+strconv.Itoa(port)+"/local/quit", nil)
+	req.Header.Set("X-CopyApp", key)
+	resp, e := (&http.Client{Timeout: 3 * time.Second}).Do(req)
+	if e != nil {
+		return h, err
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return h, err
+	}
+	windows.CloseHandle(h)
+	for i := 0; i < 100; i++ {
+		time.Sleep(100 * time.Millisecond)
+		h, err = windows.CreateMutex(nil, false, windows.StringToUTF16Ptr(`Local\CopyAppSingleton`))
+		if err != syscall.ERROR_ALREADY_EXISTS {
+			return h, err
+		}
+		windows.CloseHandle(h)
+	}
+	return 0, syscall.ERROR_ALREADY_EXISTS
+}
+
+// listenRemembered reuses a saved port when available and saves the result.
 func listenRemembered(name, host string, preferred int, scan bool) (net.Listener, error) {
 	path := filepath.Join(dataDir, name)
 	var tries []int
@@ -204,6 +327,9 @@ func pairingURL(key string) string {
 }
 
 func openBrowser(u string) {
+	if os.Getenv("COPYAPP_NO_BROWSER") != "" {
+		return
+	}
 	exec.Command("rundll32", "url.dll,FileProtocolHandler", u).Start()
 }
 
@@ -255,28 +381,32 @@ func sendFile(path string) {
 		machine.Notify(i18n.T("toast.notSent"), i18n.T("toast.cantSend", name))
 		return
 	}
-	if fi.Size() > store.MaxItemSize {
+	if !fi.Mode().IsRegular() || fi.Size() > prefs.Get().MaxBytes {
 		machine.Notify(i18n.T("toast.notSent"), i18n.T("toast.tooLarge", name))
-		return
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		machine.Notify(i18n.T("toast.notSent"), i18n.T("toast.cantRead", name))
 		return
 	}
 	mt := mime.TypeByExtension(strings.ToLower(filepath.Ext(name)))
 	if mt == "" {
 		mt = "application/octet-stream"
 	}
-	if _, err := srv.Publish(store.Item{Kind: "file", Name: name, Mime: mt, Data: data}); err != nil {
+	if _, err := srv.Publish(store.Item{Kind: "file", Name: name, Mime: mt, Path: path}); err != nil {
 		machine.Notify(i18n.T("toast.notSent"), publishErrText(err))
 		return
 	}
+	sentFeedback("file", fi.Size())
 	machine.Notify(i18n.T("toast.sent"), name)
 }
 
 func sendClipboard() {
+	// Ignore repeat keys while a previous clipboard read is still in progress.
+	if !sendMu.TryLock() {
+		return
+	}
+	defer sendMu.Unlock()
+	log.Printf("clipboard send requested")
 	if machine.Sensitive() {
+		log.Printf("clipboard send blocked: sensitive clipboard")
+		pc.Beep(false)
 		machine.Notify(i18n.T("toast.notSent"), i18n.T("toast.secret"))
 		return
 	}
@@ -288,25 +418,45 @@ func sendClipboard() {
 	} else if t := machine.ReadText(); t != "" {
 		it = store.Item{Kind: "text", Name: "clipboard.txt", Mime: "text/plain; charset=utf-8", Data: []byte(t)}
 	} else {
+		log.Printf("clipboard send skipped: no text or PNG")
+		pc.Beep(false)
 		machine.Notify(i18n.T("toast.nothing"), i18n.T("toast.clipEmpty"))
 		return
 	}
 	if _, err := srv.Publish(it); err != nil {
+		log.Printf("clipboard publish: %v", err)
+		pc.Beep(false)
 		machine.Notify(i18n.T("toast.notSent"), publishErrText(err))
 		return
 	}
+	sentFeedback(it.Kind, int64(len(it.Data)))
 	machine.Notify(i18n.T("toast.sent"), what)
 }
 
 func hotkeyLoop() {
-	hk := hotkey.New([]hotkey.Modifier{hotkey.ModCtrl, hotkey.ModAlt}, hotkey.KeyC)
-	if err := hk.Register(); err != nil {
-		log.Printf("hotkey: %v", err)
+	for i, mods := range [][]hotkey.Modifier{{hotkey.ModCtrl, hotkey.ModAlt}, {hotkey.ModCtrl, hotkey.ModAlt, hotkey.ModShift}} {
+		hk := hotkey.New(mods, hotkey.KeyC)
+		if err := hk.Register(); err != nil {
+			log.Printf("hotkey candidate %d registration failed: %v", i+1, err)
+			continue
+		}
+		defer hk.Unregister()
+		name := "Ctrl+Alt+C"
+		if i == 1 {
+			name = "Ctrl+Alt+Shift+C"
+		}
+		activeHotkey.Store(name)
+		log.Printf("hotkey registered: %s", name)
+		signalTrayRefresh()
+		if i == 1 {
+			pc.Info("CopyApp", i18n.T("hk.fallback", name), i18n.Lang() == "he")
+		}
+		for range hk.Keydown() {
+			go sendClipboard()
+		}
 		return
 	}
-	for range hk.Keydown() {
-		go sendClipboard()
-	}
+	pc.Info("CopyApp", i18n.T("hk.none"), i18n.Lang() == "he")
 }
 
 func startPairing() {
@@ -315,10 +465,13 @@ func startPairing() {
 }
 
 func onReady() {
-	systray.SetIcon(makeICO())
+	systray.SetIcon(makeICO(false))
+	trayReady.Store(true)
 	systray.SetTitle("CopyApp")
+	mHome := systray.AddMenuItem("", "")
 	mPair := systray.AddMenuItem("", "")
 	mSend := systray.AddMenuItem("", "Ctrl+Alt+C")
+	mFile := systray.AddMenuItem("", "")
 	mOpen := systray.AddMenuItem("", "")
 	systray.AddSeparator()
 	mAuto := systray.AddMenuItemCheckbox("", "", pc.AutostartEnabled())
@@ -337,8 +490,18 @@ func onReady() {
 		}()
 	}
 	systray.AddSeparator()
+	mUninstall := systray.AddMenuItem("", "")
 	mQuit := systray.AddMenuItem("", "")
 	relabel := func() {
+		mHome.SetTitle(i18n.T("tray.openApp"))
+		mFile.SetTitle(i18n.T("tray.sendFile"))
+		mUninstall.SetTitle(i18n.T("tray.uninstall"))
+		mSend.SetTooltip(activeHotkey.Load().(string))
+		if pc.AutostartEnabled() {
+			mAuto.Check()
+		} else {
+			mAuto.Uncheck()
+		}
 		systray.SetTooltip(i18n.T("tray.tooltip"))
 		mPair.SetTitle(i18n.T("tray.pair"))
 		mPair.SetTooltip(i18n.T("tray.pairTip"))
@@ -360,13 +523,32 @@ func onReady() {
 
 	if firstRun || !sess.Paired() {
 		go startPairing()
+	} else if openOnLaunch {
+		openBrowser(pairingURL(localKey))
 	}
 	go func() {
 		for {
 			select {
+			case <-refreshTray:
+				relabel()
+			case <-mHome.ClickedCh:
+				openBrowser(pairingURL(localKey))
+			case <-mFile.ClickedCh:
+				go func() {
+					path, err := pc.ChooseFile(i18n.T("pick.file"))
+					if err != nil {
+						log.Printf("choose file: %v", err)
+						return
+					}
+					if path != "" {
+						sendFile(path)
+					}
+				}()
+			case <-mUninstall.ClickedCh:
+				go uninstallApp()
 			case l := <-langClicked:
 				i18n.Set(l)
-				if err := i18n.Save(dataDir); err != nil {
+				if _, err := prefs.Update(func(st *settings.Settings) { st.Language = l }); err != nil {
 					log.Printf("save language: %v", err)
 				}
 				relabel()
@@ -375,7 +557,7 @@ func onReady() {
 			case <-mSend.ClickedCh:
 				go sendClipboard()
 			case <-mOpen.ClickedCh:
-				if err := pc.OpenFolder(pc.ReceivedDir()); err != nil {
+				if err := pc.OpenFolder(prefs.Get().SaveDir); err != nil {
 					machine.Notify("CopyApp", err.Error())
 				}
 			case <-mAuto.ClickedCh:
@@ -400,25 +582,70 @@ func onReady() {
 	}()
 }
 
-// createSendToShortcut adds "Send to > Phone (CopyApp)" (best effort).
-func createSendToShortcut() {
-	exe, err := os.Executable()
-	if err != nil {
-		return
-	}
-	ps := `$d=[Environment]::GetFolderPath('SendTo');$s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $d $env:CA_LNK));` +
-		`$s.TargetPath=$env:CA_EXE;$s.WorkingDirectory=Split-Path $env:CA_EXE;$s.Save()`
-	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps)
-	cmd.Env = append(os.Environ(), "CA_EXE="+exe, "CA_LNK="+sendToLinkName)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
-	if err := cmd.Run(); err != nil {
-		log.Printf("sendto shortcut: %v", err)
-	}
-}
-
 func publishErrText(err error) string {
 	if errors.Is(err, store.ErrOutboxFull) {
 		return i18n.T("toast.outboxFull")
 	}
 	return err.Error()
+}
+
+func signalTrayRefresh() {
+	select {
+	case refreshTray <- struct{}{}:
+	default:
+	}
+}
+
+func sentFeedback(kind string, size int64) {
+	log.Printf("published to phone: kind=%s bytes=%d", kind, size)
+	pc.Beep(true)
+	if trayReady.Load() {
+		go func() {
+			flashMu.Lock()
+			defer flashMu.Unlock()
+			systray.SetIcon(makeICO(true))
+			time.Sleep(1200 * time.Millisecond)
+			systray.SetIcon(makeICO(false))
+		}()
+	}
+}
+
+var uninstallMu sync.Mutex
+
+func uninstallApp() {
+	if !uninstallMu.TryLock() {
+		return
+	}
+	defer uninstallMu.Unlock()
+	rtl := i18n.Lang() == "he"
+	if !pc.Ask("CopyApp", i18n.T("un.confirm"), rtl, true) {
+		return
+	}
+	paths := install.Default()
+	// Only an installed executable may recursively remove its install folder.
+	exe, err := os.Executable()
+	if err != nil || !install.SamePath(exe, paths.Exe()) {
+		pc.Info("CopyApp", "Please uninstall using the installed CopyApp shortcut.", rtl)
+		return
+	}
+	deleteData := pc.Ask("CopyApp", i18n.T("un.data", dataDir), rtl, true)
+	// Received files belong to the user, including files in a custom folder.
+	// Always preserve them; uninstall only removes application-owned data.
+	if !install.SafeToDelete(paths.InstallDir) || deleteData && !install.SafeToDelete(dataDir) {
+		log.Printf("uninstall refused unsafe path")
+		return
+	}
+	if err := pc.SetAutostart(false); err != nil {
+		log.Printf("uninstall startup: %v", err)
+		return
+	}
+	if err := install.RemoveShortcuts(paths); err != nil {
+		log.Printf("uninstall shortcuts: %v", err)
+		return
+	}
+	if err := install.ScheduleUninstall(os.Getpid(), paths, dataDir, deleteData); err != nil {
+		log.Printf("uninstall: %v", err)
+		return
+	}
+	systray.Quit()
 }

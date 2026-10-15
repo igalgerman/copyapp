@@ -13,6 +13,7 @@ const L = `http://127.0.0.1:${LPORT}`;
 const KEY = fs.readFileSync(path.join(process.env.COPYAPP_APPDATA, 'CopyApp', 'local.key'), 'utf8').trim();
 const LH = { 'X-CopyApp': KEY };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+if (process.env.COPYAPP_WIFI_NAME !== 'Home Wi-Fi') throw new Error('Public recordings require COPYAPP_WIFI_NAME=Home Wi-Fi');
 const dataUri = (file, mime) => `data:${mime};base64,` + fs.readFileSync(file).toString('base64');
 const ICON = dataUri(path.join(WEB, 'icon-192.png'), 'image/png');
 const ps = (cmd) => cp.execFileSync('powershell.exe', ['-NoProfile', '-STA', '-Command', '[Console]::OutputEncoding=[Text.Encoding]::UTF8;' + cmd], { encoding: 'utf8' }).replace(/\r?\n$/, '');
@@ -83,10 +84,11 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
   pcT0 = Date.now(); const pc = await pcCtx.newPage();
   const phT0 = Date.now(); const ph = await phoneCtx.newPage();
   const phoneOffset = (phT0 - pcT0) / 1000;
-  const goPC = async (html) => { await pc.setContent(html, { waitUntil: 'load' }); };
+  const goPC = async (html) => { await pc.goto('about:blank'); await pc.setContent(html, { waitUntil: 'load' }); };
 
   const clipBefore = (() => { try { return getClip(); } catch { return ''; } })();
-  const recvDir = path.join(ps("(New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path"), 'CopyApp');
+  const recvDir = process.env.COPYAPP_RECEIVE_DIR;
+  if (!recvDir) throw new Error('Recording requires an isolated COPYAPP_RECEIVE_DIR');
   const hadRecv = fs.existsSync(recvDir); const recvBefore = hadRecv ? fs.readdirSync(recvDir) : [];
 
   try {
@@ -109,8 +111,8 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
 
   // ---------------------------------------------------------------- install
   async function installScenario(pc, ph, goPC, phoneCtx) {
-    await ph.setContent(`<body style="margin:0;height:100vh;background:linear-gradient(160deg,#2E44E8,#10152A);color:#fff;font:700 24px 'Segoe UI';display:flex;align-items:center;justify-content:center;text-align:center;padding:30px">Your phone<br>waits for step 5</body>`);
-    await goPC(mocks.releases(ICON)); cap('1. Download copyapp.exe from the Releases page');
+    await ph.setContent(`<meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;height:100vh;background:linear-gradient(160deg,#2E44E8,#10152A);color:#fff;font:700 24px 'Segoe UI';display:flex;align-items:center;justify-content:center;text-align:center;padding:30px;box-sizing:border-box">Connect both devices<br>to Home Wi-Fi</body>`);
+    await goPC(mocks.releases(ICON)); cap('1. Download copyapp.exe from the CopyApp website');
     await sleep(1800); await pc.evaluate(() => click()); await sleep(3800);
 
     await goPC(mocks.downloads(ICON)); cap('2. Open the Downloads folder and double-click copyapp.exe');
@@ -120,11 +122,16 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
     await sleep(1800); await pc.evaluate(() => step('a')); await sleep(2400);
     await pc.evaluate(() => step('b')); cap('3. Then click Run anyway (normal for a new app)');
     await sleep(3500);
-    await pc.evaluate(() => step('c')); cap('If asked by the firewall: Allow on private networks');
+    await pc.evaluate(() => step('c')); cap('Firewall: allow CopyApp on your network profile');
     await sleep(4200);
+    await goPC(mocks.startupChoice());
+    cap('Choose Yes or No for Start with Windows; change it later');
+    await sleep(3500);
 
     await openPairing();
-    await pc.goto(`${L}/pairing?k=${KEY}`); cap('4. CopyApp shows a pairing page with a QR code');
+    await fetch(`${L}/local/settings`, { method: 'POST', headers: { ...LH, 'Content-Type': 'application/json' }, body: JSON.stringify({ language: 'en' }) });
+    await pc.goto(`${L}/pairing?k=${KEY}`); cap('4. Installed: Desktop shortcut opens status and settings');
+    await pc.locator('#pair').scrollIntoViewIfNeeded();
     await sleep(3600);
 
     const qrPng = await (await fetch(`${L}/qr`, { headers: LH })).arrayBuffer();
@@ -138,12 +145,18 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
     await pc.reload(); cap('Done: the PC says "Phone paired"');
     await sleep(3000);
 
-    await ph.waitForSelector('#setup-card:not([hidden])', { timeout: 8000 }).catch(() => {});
-    cap('6. One time only: tap "Show me how" to install the certificate');
-    await sleep(2800); await tap(ph, '#setup-card .btn-primary'); await sleep(1500);
+    await ph.locator('[data-lang="en"]:visible').first().click();
+    cap('Ready in the browser. If warned: Advanced > Proceed');
+    await sleep(4000);
+    cap('Optional: Settings > Make it a real app adds Android sharing');
+    await tap(ph, '[data-open="sheet-settings"]'); await sleep(1000);
+    await tap(ph, '#app-row'); await sleep(1500);
     await ph.waitForFunction(() => { const n = document.querySelector('#sheet-cert [data-fp-short]'); return n && n.textContent.trim().length > 3 && n.textContent.trim() !== '…'; }, null, { timeout: 8000 }).catch(() => console.log('WARN: short code not shown'));
-    await pc.goto(`${L}/pairing?k=${KEY}`); // PC window shows the same code to compare
-    cap('Check the code matches your PC'); await sleep(5500);
+    await openPairing(); // tray Pair phone shows the certificate code without revoking the phone
+    await pc.goto(`${L}/pairing?k=${KEY}`);
+    await pc.locator('#careful').evaluate((el) => { el.open = true; });
+    await pc.locator('#careful').scrollIntoViewIfNeeded();
+    cap('PC tray > Pair phone: compare the certificate code'); await sleep(5500);
     cap('Follow the 4 steps: Settings > Security > Install a certificate');
     // gently scroll through the real certificate steps
     const h = await ph.evaluate(() => { const d = document.getElementById('sheet-cert'); return d.scrollHeight - d.clientHeight; });
@@ -151,7 +164,7 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
     await sleep(800);
     await ph.evaluate(() => document.getElementById('sheet-cert').close()); await sleep(600);
 
-    cap('7. Chrome menu (3 dots) > Add to Home screen');
+    cap('After the optional certificate: Chrome menu > Install app');
     await ph.evaluate((html) => document.body.insertAdjacentHTML('beforeend', html), mocks.chromeMenu(ICON));
     await sleep(2800);
     await ph.evaluate(() => { document.getElementById('menu').style.display = 'none'; document.getElementById('dlg').style.display = 'block'; });
@@ -168,6 +181,8 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
   async function useScenario(pc, ph, goPC) {
     await ph.goto(await lanBase() + '/');
     await ph.waitForSelector('body[data-view="main"]', { timeout: 15000 });
+    await ph.locator('[data-lang="en"]:visible').first().click();
+    if (await ph.locator('#tip-dismiss').isVisible()) await tap(ph, '#tip-dismiss');
     await goPC(mocks.notepad('Untitled - Notepad', '', 'Your PC is waiting...'));
     await sleep(2500);
 
@@ -182,6 +197,7 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
     cap('On the PC, press Ctrl+V: the text is there'); await sleep(4200);
 
     // --- phone -> PC: photo (goes to the PC clipboard as an image)
+    await ph.locator('input[name="dest-dock"][value="clipboard"]').check({ force: true });
     cap('Send a photo: tap Photo and pick a picture');
     await tap(ph, 'label:has(#pick-photo)').catch(() => {});
     await ph.setInputFiles('#pick-photo', mkImage()); await sleep(2200);
@@ -191,6 +207,7 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
     cap('Photo arrives on the PC clipboard: Ctrl+V pastes it'); await sleep(4000);
 
     // --- phone -> PC: file
+    await ph.locator('input[name="dest-dock"][value="file"]').check({ force: true });
     fs.writeFileSync(path.join(RAW, 'Trip-plan.txt'), 'Day 1: arrive\nDay 2: beach\nDay 3: hike\n');
     await goPC(mocks.notepad('Untitled - Notepad', '', 'Next: send a file'));
     cap('Send a file: tap File and pick one');
@@ -200,8 +217,14 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
     await goPC(mocks.folder('This PC > Downloads > CopyApp', names, 'Files land in Downloads\\CopyApp'));
     cap('Files are saved on the PC in Downloads\\CopyApp'); await sleep(4000);
 
+    await fetch(`${L}/local/settings`, { method: 'POST', headers: { ...LH, 'Content-Type': 'application/json' }, body: JSON.stringify({ language: 'en' }) });
+    await pc.goto(`${L}/pairing?k=${KEY}`);
+    await pc.locator('#settings').scrollIntoViewIfNeeded();
+    cap('PC settings: receive folder, destination and 2 GiB file limit');
+    await sleep(4200);
+
     // --- PC -> phone: Ctrl+Alt+C
-    const pcText = 'Wi-Fi password: blue-kite-42';
+    const pcText = 'Shopping list: coffee, apples, bread';
     setClip(pcText);
     await goPC(mocks.notepad('Notes - Notepad', pcText, 'Copy it (Ctrl+C), then press <span class="k">Ctrl</span>+<span class="k">Alt</span>+<span class="k">C</span>'));
     cap('PC to phone: copy something, then press Ctrl+Alt+C'); await sleep(3000);
@@ -209,7 +232,7 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
     ps(`Add-Type -Name K -Namespace W -MemberDefinition '[DllImport("user32.dll")] public static extern void keybd_event(byte b, byte s, uint f, UIntPtr e);'; ` +
        `[W.K]::keybd_event(0x11,0,0,[UIntPtr]::Zero);[W.K]::keybd_event(0x12,0,0,[UIntPtr]::Zero);[W.K]::keybd_event(0x43,0,0,[UIntPtr]::Zero);Start-Sleep -Milliseconds 120;` +
        `[W.K]::keybd_event(0x43,0,2,[UIntPtr]::Zero);[W.K]::keybd_event(0x12,0,2,[UIntPtr]::Zero);[W.K]::keybd_event(0x11,0,2,[UIntPtr]::Zero)`);
-    await ph.waitForSelector('#feed .msg-in', { timeout: 8000 }).catch(() => console.log('WARN: hotkey item did not arrive'));
+    await ph.waitForSelector('#feed .msg-in', { timeout: 10000 });
     cap('It appears in the phone inbox: tap Copy'); await sleep(2600);
     await tap(ph, '#feed .msg-in:last-child .btn-primary').catch(() => {}); await sleep(2800);
 
@@ -221,7 +244,7 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
     await pc.evaluate(() => step('sub')); cap('...choose Send to > Phone (CopyApp)'); await sleep(2600);
     const before = await ph.locator('#feed .msg-in').count();
     cp.execFileSync(EXE, [path.join(RAW, 'Holiday-photos-list.txt')], { timeout: 20000, env: { ...process.env, APPDATA: process.env.COPYAPP_APPDATA } });
-    await ph.waitForFunction((n) => document.querySelectorAll('#feed .msg-in').length > n, before, { timeout: 8000 }).catch(() => console.log('WARN: file did not arrive'));
+    await ph.waitForFunction((n) => document.querySelectorAll('#feed .msg-in').length > n, before, { timeout: 10000 });
     cap('The file shows up on the phone: tap Download'); await sleep(2800);
     await tap(ph, '#feed .msg-in:last-child a.btn-primary').catch(() => {}); await sleep(3200);
   }

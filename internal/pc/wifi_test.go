@@ -6,11 +6,11 @@ func TestParseSSID(t *testing.T) {
 	connected := "\r\nThere is 1 interface on the system: \r\n\r\n" +
 		"    Name                   : ‏‏Wi-Fi 2\r\n" +
 		"    State                  : connected\r\n" +
-		"    SSID                   : German\r\n" +
-		"    AP BSSID               : 90:9a:4a:0d:a0:57\r\n" +
-		"    Profile                : German \r\n"
+		"    SSID                   : Home Wi-Fi\r\n" +
+		"    AP BSSID               : aa:bb:cc:dd:ee:ff\r\n" +
+		"    Profile                : Home Wi-Fi \r\n"
 	cases := []struct{ name, in, want string }{
-		{"connected", connected, "German"},
+		{"connected", connected, "Home Wi-Fi"},
 		{"bssid first", "    BSSID : aa:bb:cc:dd:ee:ff\n    SSID : Home 5G\n", "Home 5G"},
 		{"colon in name", "    SSID                   : Cafe: guest\n", "Cafe: guest"},
 		{"hebrew + rlm", "    SSID : ‏הבית של משה\r\n", "הבית של משה"},
