@@ -62,22 +62,33 @@ func mustCIDRs(ss ...string) []*net.IPNet {
 	return out
 }
 
+// KeyProtector encrypts private keys at rest (Windows DPAPI in the app; a fake
+// in tests). A nil KeyProtector stores keys as plain PEM.
+type KeyProtector interface {
+	Protect(plain []byte) ([]byte, error)
+	Unprotect(enc []byte) ([]byte, error)
+}
+
+// protectedKeyType is the PEM block type of a key encrypted by a KeyProtector.
+const protectedKeyType = "COPYAPP PROTECTED EC PRIVATE KEY"
+
 // Load returns a TLS config serving a leaf certificate for ips (plus
 // 127.0.0.1, localhost and copyapp.local), and the CA certificate in PEM form
 // for installing on the phone. Keys and certificates are stored in dir with
-// mode 0600; they are created on first use.
-func Load(dir string, ips []net.IP) (*tls.Config, []byte, error) {
+// mode 0600, keys encrypted with kp; they are created on first use. Plain
+// keys from older versions are re-encrypted with kp when read.
+func Load(dir string, ips []net.IP, kp KeyProtector) (*tls.Config, []byte, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, nil, err
 	}
-	caCert, caKey, err := loadOrCreateCA(dir)
+	caCert, caKey, err := loadOrCreateCA(dir, kp)
 	if err != nil {
 		return nil, nil, err
 	}
 	want := append([]net.IP{net.IPv4(127, 0, 0, 1)}, ips...)
-	leaf, err := loadLeaf(dir, caCert, want)
+	leaf, err := loadLeaf(dir, caCert, want, kp)
 	if err != nil {
-		leaf, err = createLeaf(dir, caCert, caKey, want)
+		leaf, err = createLeaf(dir, caCert, caKey, want, kp)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -105,13 +116,13 @@ func Fingerprint(certPEM []byte) string {
 	return strings.Join(parts, ":")
 }
 
-func loadOrCreateCA(dir string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
-	cp, kp := filepath.Join(dir, caCertFile), filepath.Join(dir, caKeyFile)
+func loadOrCreateCA(dir string, kp KeyProtector) (*x509.Certificate, *ecdsa.PrivateKey, error) {
+	cp, kpath := filepath.Join(dir, caCertFile), filepath.Join(dir, caKeyFile)
 	_, e1 := os.Stat(cp)
-	_, e2 := os.Stat(kp)
+	_, e2 := os.Stat(kpath)
 	if e1 == nil && e2 == nil {
 		// Do not silently replace a damaged CA: the phone trusts it.
-		return readPair(cp, kp)
+		return readPair(cp, kpath, kp)
 	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -135,7 +146,7 @@ func loadOrCreateCA(dir string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := writePair(cp, kp, der, key); err != nil {
+	if err := writePair(cp, kpath, der, key, kp); err != nil {
 		return nil, nil, err
 	}
 	// A new CA invalidates any old leaf.
@@ -147,9 +158,9 @@ func loadOrCreateCA(dir string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
 
 // loadLeaf returns the stored leaf if it is signed by ca, covers every IP in
 // want, and is not close to expiry.
-func loadLeaf(dir string, ca *x509.Certificate, want []net.IP) (tls.Certificate, error) {
-	cp, kp := filepath.Join(dir, leafCertFile), filepath.Join(dir, leafKeyFile)
-	c, key, err := readPair(cp, kp)
+func loadLeaf(dir string, ca *x509.Certificate, want []net.IP, kp KeyProtector) (tls.Certificate, error) {
+	cp, kpath := filepath.Join(dir, leafCertFile), filepath.Join(dir, leafKeyFile)
+	c, key, err := readPair(cp, kpath, kp)
 	if err != nil {
 		return tls.Certificate{}, err
 	}
@@ -174,7 +185,7 @@ func loadLeaf(dir string, ca *x509.Certificate, want []net.IP) (tls.Certificate,
 	return tls.Certificate{Certificate: [][]byte{c.Raw}, PrivateKey: key, Leaf: c}, nil
 }
 
-func createLeaf(dir string, ca *x509.Certificate, caKey *ecdsa.PrivateKey, ips []net.IP) (tls.Certificate, error) {
+func createLeaf(dir string, ca *x509.Certificate, caKey *ecdsa.PrivateKey, ips []net.IP, kp KeyProtector) (tls.Certificate, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return tls.Certificate{}, err
@@ -204,7 +215,7 @@ func createLeaf(dir string, ca *x509.Certificate, caKey *ecdsa.PrivateKey, ips [
 	if err != nil {
 		return tls.Certificate{}, err
 	}
-	if err := writePair(filepath.Join(dir, leafCertFile), filepath.Join(dir, leafKeyFile), der, key); err != nil {
+	if err := writePair(filepath.Join(dir, leafCertFile), filepath.Join(dir, leafKeyFile), der, key, kp); err != nil {
 		return tls.Certificate{}, err
 	}
 	c, err := x509.ParseCertificate(der)
@@ -222,7 +233,9 @@ func serial() *big.Int {
 	return n.Add(n, big.NewInt(1))
 }
 
-func readPair(certPath, keyPath string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
+// readPair loads a certificate and its key. A plain key is re-written
+// encrypted when kp is set (migration from older versions; best effort).
+func readPair(certPath, keyPath string, kp KeyProtector) (*x509.Certificate, *ecdsa.PrivateKey, error) {
 	cb, err := os.ReadFile(certPath)
 	if err != nil {
 		return nil, nil, err
@@ -240,7 +253,20 @@ func readPair(certPath, keyPath string) (*x509.Certificate, *ecdsa.PrivateKey, e
 	if err != nil {
 		return nil, nil, err
 	}
-	k, err := x509.ParseECPrivateKey(kblk.Bytes)
+	kder := kblk.Bytes
+	switch kblk.Type {
+	case protectedKeyType:
+		if kp == nil {
+			return nil, nil, fmt.Errorf("tlsutil: %s is encrypted and no key protector is set", keyPath)
+		}
+		if kder, err = kp.Unprotect(kder); err != nil {
+			return nil, nil, fmt.Errorf("tlsutil: decrypt %s: %w", keyPath, err)
+		}
+	case "EC PRIVATE KEY":
+	default:
+		return nil, nil, fmt.Errorf("tlsutil: unexpected PEM type in %s", keyPath)
+	}
+	k, err := x509.ParseECPrivateKey(kder)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -248,15 +274,30 @@ func readPair(certPath, keyPath string) (*x509.Certificate, *ecdsa.PrivateKey, e
 	if !ok || !pub.Equal(&k.PublicKey) {
 		return nil, nil, fmt.Errorf("tlsutil: key does not match %s", certPath)
 	}
+	if kblk.Type != protectedKeyType && kp != nil {
+		_ = writeKey(keyPath, k, kp)
+	}
 	return c, k, nil
 }
 
-func writePair(certPath, keyPath string, der []byte, key *ecdsa.PrivateKey) error {
+func writeKey(keyPath string, key *ecdsa.PrivateKey, kp KeyProtector) error {
 	kder, err := x509.MarshalECPrivateKey(key)
 	if err != nil {
 		return err
 	}
-	if err := writeFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: kder})); err != nil {
+	blk := &pem.Block{Type: "EC PRIVATE KEY", Bytes: kder}
+	if kp != nil {
+		enc, err := kp.Protect(kder)
+		if err != nil {
+			return err
+		}
+		blk = &pem.Block{Type: protectedKeyType, Bytes: enc}
+	}
+	return writeFile(keyPath, pem.EncodeToMemory(blk))
+}
+
+func writePair(certPath, keyPath string, der []byte, key *ecdsa.PrivateKey, kp KeyProtector) error {
+	if err := writeKey(keyPath, key, kp); err != nil {
 		return err
 	}
 	return writeFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))

@@ -83,7 +83,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	tlsCfg, caPEM, err := tlsutil.Load(dataDir, pc.LanIPs())
+	tlsCfg, caPEM, err := tlsutil.Load(dataDir, pc.LanIPs(), secret.DPAPI{})
 	if err != nil {
 		log.Fatal(err)
 	}

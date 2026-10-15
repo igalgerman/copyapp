@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net"
 	"os"
@@ -42,11 +43,11 @@ func pool(t *testing.T, caPEM []byte) *x509.CertPool {
 func TestLoadStableCAAndLeafVerifies(t *testing.T) {
 	d := t.TempDir()
 	ips := []net.IP{net.ParseIP("192.168.1.5")}
-	cfg1, ca1, err := Load(d, ips)
+	cfg1, ca1, err := Load(d, ips, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg2, ca2, err := Load(d, ips)
+	cfg2, ca2, err := Load(d, ips, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,11 +70,11 @@ func TestLoadStableCAAndLeafVerifies(t *testing.T) {
 
 func TestNewIPRegeneratesLeafKeepsCA(t *testing.T) {
 	d := t.TempDir()
-	_, ca1, err := Load(d, []net.IP{net.ParseIP("192.168.1.5")})
+	_, ca1, err := Load(d, []net.IP{net.ParseIP("192.168.1.5")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, ca2, err := Load(d, []net.IP{net.ParseIP("192.168.1.5"), net.ParseIP("10.0.0.7")})
+	cfg, ca2, err := Load(d, []net.IP{net.ParseIP("192.168.1.5"), net.ParseIP("10.0.0.7")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +91,7 @@ func TestKeyFilePermissions(t *testing.T) {
 		t.Skip("POSIX permission bits are not meaningful on Windows; %APPDATA% ACLs apply")
 	}
 	d := t.TempDir()
-	if _, _, err := Load(d, []net.IP{net.ParseIP("192.168.1.5")}); err != nil {
+	if _, _, err := Load(d, []net.IP{net.ParseIP("192.168.1.5")}, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range []string{caKeyFile, leafKeyFile} {
@@ -107,36 +108,143 @@ func TestKeyFilePermissions(t *testing.T) {
 // The CA is name-constrained: a leaf it signs for a public IP must not verify.
 func TestCANameConstrained(t *testing.T) {
 	d := t.TempDir()
-	_, caPEM, err := Load(d, []net.IP{net.ParseIP("192.168.1.5")})
+	_, caPEM, err := Load(d, []net.IP{net.ParseIP("192.168.1.5")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	caCert, caKey, err := readPair(filepath.Join(d, caCertFile), filepath.Join(d, caKeyFile))
+	caCert, caKey, err := readPair(filepath.Join(d, caCertFile), filepath.Join(d, caKeyFile), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(99),
-		Subject:      pkix.Name{CommonName: "evil"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(time.Hour),
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IPAddresses:  []net.IP{net.ParseIP("8.8.8.8")},
-		DNSNames:     []string{"example.com"},
+	issue := func(ips []net.IP, names []string) *x509.Certificate {
+		k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		tmpl := &x509.Certificate{
+			SerialNumber: big.NewInt(99),
+			Subject:      pkix.Name{CommonName: "evil"},
+			NotBefore:    time.Now().Add(-time.Hour),
+			NotAfter:     time.Now().Add(time.Hour),
+			ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			IPAddresses:  ips,
+			DNSNames:     names,
+		}
+		der, err := x509.CreateCertificate(rand.Reader, tmpl, caCert, &k.PublicKey, caKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, _ := x509.ParseCertificate(der)
+		return c
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, caCert, &k.PublicKey, caKey)
+	for _, tc := range []struct {
+		host  string
+		ips   []net.IP
+		names []string
+	}{
+		{"8.8.8.8", []net.IP{net.ParseIP("8.8.8.8")}, nil},                           // public IPv4 alone
+		{"2001:4860:4860::8888", []net.IP{net.ParseIP("2001:4860:4860::8888")}, nil}, // public IPv6
+		{"example.com", nil, []string{"example.com"}},                                // public name alone
+		{"copyapp.local.evil.com", nil, []string{"copyapp.local.evil.com"}},          // suffix trick
+		{"example.com", []net.IP{net.ParseIP("8.8.8.8")}, []string{"example.com"}},
+	} {
+		c := issue(tc.ips, tc.names)
+		if _, err := c.Verify(x509.VerifyOptions{Roots: pool(t, caPEM), DNSName: tc.host}); err == nil {
+			t.Errorf("leaf for %s verified; CA is not name-constrained", tc.host)
+		}
+	}
+	// Sanity: the same path works for a permitted private IP.
+	ok := issue([]net.IP{net.ParseIP("10.1.2.3")}, nil)
+	if _, err := ok.Verify(x509.VerifyOptions{Roots: pool(t, caPEM), DNSName: "10.1.2.3"}); err != nil {
+		t.Fatalf("private IP should verify: %v", err)
+	}
+}
+
+// fakeProtector stands in for DPAPI so the tests stay hermetic.
+type fakeProtector struct{}
+
+func (fakeProtector) Protect(b []byte) ([]byte, error) {
+	out := []byte("fake:")
+	for _, x := range b {
+		out = append(out, x^0x5a)
+	}
+	return out, nil
+}
+
+func (fakeProtector) Unprotect(b []byte) ([]byte, error) {
+	if !bytes.HasPrefix(b, []byte("fake:")) {
+		return nil, errors.New("not protected by fake")
+	}
+	out := make([]byte, 0, len(b)-5)
+	for _, x := range b[5:] {
+		out = append(out, x^0x5a)
+	}
+	return out, nil
+}
+
+func assertProtected(t *testing.T, d string) {
+	t.Helper()
+	for _, f := range []string{caKeyFile, leafKeyFile} {
+		b, err := os.ReadFile(filepath.Join(d, f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		blk, _ := pem.Decode(b)
+		if blk == nil || blk.Type != protectedKeyType || bytes.Contains(b, []byte("BEGIN EC PRIVATE KEY")) {
+			t.Fatalf("%s is not protected at rest:\n%s", f, b)
+		}
+	}
+}
+
+func TestKeysProtectedAtRest(t *testing.T) {
+	d := t.TempDir()
+	ips := []net.IP{net.ParseIP("192.168.1.5")}
+	cfg1, ca1, err := Load(d, ips, fakeProtector{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	evil, _ := x509.ParseCertificate(der)
-	if _, err := evil.Verify(x509.VerifyOptions{Roots: pool(t, caPEM), DNSName: "example.com"}); err == nil {
-		t.Fatal("CA is not name-constrained")
+	assertProtected(t, d)
+	cfg2, ca2, err := Load(d, ips, fakeProtector{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(ca1, ca2) || !bytes.Equal(leafOf(t, cfg1).Raw, leafOf(t, cfg2).Raw) {
+		t.Fatal("protected keys did not load back")
+	}
+}
+
+func TestPlaintextKeysMigrated(t *testing.T) {
+	d := t.TempDir()
+	ips := []net.IP{net.ParseIP("192.168.1.5")}
+	cfg1, ca1, err := Load(d, ips, nil) // as written by older versions
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg2, ca2, err := Load(d, ips, fakeProtector{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(ca1, ca2) || !bytes.Equal(leafOf(t, cfg1).Raw, leafOf(t, cfg2).Raw) {
+		t.Fatal("migration must keep the CA and leaf")
+	}
+	assertProtected(t, d)
+}
+
+func TestUnreadableCAKeyIsNotReplaced(t *testing.T) {
+	d := t.TempDir()
+	ips := []net.IP{net.ParseIP("192.168.1.5")}
+	if _, _, err := Load(d, ips, fakeProtector{}); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(filepath.Join(d, caCertFile))
+	if _, _, err := Load(d, ips, nil); err == nil {
+		t.Fatal("a protected CA key without its protector must fail, not be regenerated")
+	}
+	after, _ := os.ReadFile(filepath.Join(d, caCertFile))
+	if !bytes.Equal(before, after) {
+		t.Fatal("CA was replaced")
 	}
 }
 
 func TestCAIsUsableRoot(t *testing.T) {
-	_, caPEM, err := Load(t.TempDir(), []net.IP{net.ParseIP("192.168.1.5")})
+	_, caPEM, err := Load(t.TempDir(), []net.IP{net.ParseIP("192.168.1.5")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
