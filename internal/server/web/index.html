@@ -305,6 +305,19 @@
   </div>
 </dialog>
 
+<dialog class="sheet" id="sheet-share" aria-labelledby="share-title">
+  <div class="sheet-grip" aria-hidden="true"></div>
+  <h2 class="sheet-title" id="share-title" data-i18n="share.title"></h2>
+  <p class="sheet-text" data-i18n="share.text"></p>
+  <div class="share-preview" id="share-preview" dir="auto"></div>
+  <div class="paste-actions">
+    <button type="button" class="btn btn-quiet" id="share-cancel" data-i18n="cancel"></button>
+    <button type="button" class="btn btn-primary" id="share-send">
+      <svg class="ic" aria-hidden="true"><use href="#i-up"/></svg> <span data-i18n="share.send"></span>
+    </button>
+  </div>
+</dialog>
+
 <div class="toasts" id="toasts" popover="manual"></div>
 <div class="vh" id="alerts" role="alert" aria-live="assertive"></div>
 

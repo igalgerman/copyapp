@@ -1034,14 +1034,43 @@
       toast('err', ...errorText('share'));
       return;
     }
-    if (s.files.length) return sendFiles(s.files);
     // Same rules as the PC's own share handling: text, then the link, else the title.
     let t = s.text || '';
     if (s.url && !t.includes(s.url)) t = (t.trim() ? t + '\n' : '') + s.url;
     if (!t.trim()) t = s.title || '';
-    if (!t.trim()) return toast('err', ...errorText('empty'));
-    return sendText(t);
+    if (!s.files.length && !t.trim()) return toast('err', ...errorText('empty'));
+    confirmShare(s.files.length ? { files: s.files } : { text: t });
   }
+
+  // Anything can POST a "share" to this origin once the app is installed, so a
+  // share is never sent by itself: show what arrived and wait for a tap.
+  let pendingShare = null;
+  function confirmShare(p) {
+    const box = $('#share-preview');
+    if (p.files) {
+      const f = p.files;
+      const total = f.reduce((a, b) => a + b.size, 0);
+      const name = f.length === 1 ? el('bdi', { text: f[0].name }) : el('span', { msg: ['out.more', { name: f[0].name, n: f.length - 1 }] });
+      box.replaceChildren(el('div', { class: 'file-row file-row-flush' },
+        el('span', { class: 'file-tile', 'aria-hidden': 'true', dir: 'ltr', text: f.length === 1 ? extOf(f[0].name, f[0].type) : f.length + '×' }),
+        el('div', {}, el('div', { class: 'file-name' }, name), el('div', { class: 'file-sub', text: fmtSize(total), 'data-size': total }))));
+    } else {
+      box.replaceChildren(document.createTextNode(p.text.length > 600 ? p.text.slice(0, 600) + '…' : p.text));
+    }
+    openSheet('sheet-share');
+    pendingShare = p; // after openSheet, which closes other sheets
+  }
+  $('#sheet-share').addEventListener('close', () => { pendingShare = null; });
+  $('#share-cancel').addEventListener('click', () => {
+    $('#sheet-share').close();
+    toast('ok', ['share.canceled'], null, 2500);
+  });
+  $('#share-send').addEventListener('click', () => {
+    const p = pendingShare;
+    $('#sheet-share').close();
+    if (!p) return;
+    if (p.files) sendFiles(p.files); else sendText(p.text);
+  });
 
   let shareWaiting = false;
   async function start() {

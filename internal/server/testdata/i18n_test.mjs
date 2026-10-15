@@ -66,9 +66,9 @@ assert.equal(I.t('toast.downloading', { name: 'x.pdf' }, 'he'), 'מוריד את
 assert.equal(I.t('no.such.key'), 'no.such.key');
 
 // Sizes and relative times.
-assert.equal(strip(I.size(1536 * 1024, 'en')), '1.5 MB');
-assert.equal(strip(I.size(1536 * 1024, 'ru')), '1,5 МБ');
-assert.equal(I.size(10, 'he'), '⁨10 B⁩');
+assert.equal(strip(I.size(1536 * 1024, 'en')), '1.5\u00a0MB'); // no-break space: never wraps between number and unit
+assert.equal(strip(I.size(1536 * 1024, 'ru')), '1,5\u00a0МБ');
+assert.equal(I.size(10, 'he'), '⁨10\u00a0B⁩');
 const now = Date.UTC(2026, 0, 1, 12, 0, 0);
 assert.equal(I.relTime(now - 5000, now, 'en'), 'just now');
 assert.equal(I.relTime(now - 5 * 60000, now, 'en'), '5 minutes ago');

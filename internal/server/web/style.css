@@ -280,6 +280,7 @@ body .tip-card .ic { stroke: currentColor; }
 /* empty state */
 .empty { text-align: center; padding: 6vh 18px 0; }
 .empty[hidden] { display: none; }
+.empty bdi { white-space: nowrap; }
 .empty-art { width: 220px; margin: 0 auto 22px; }
 .empty-svg { width: 100%; height: auto; overflow: visible; }
 .ea-pc, .ea-phone { fill: var(--surface); stroke: var(--ink); stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; }
@@ -580,6 +581,9 @@ body .tip-card .ic { stroke: currentColor; }
 }
 .paste-form textarea:focus { outline: none; border-color: var(--cobalt); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cobalt) 30%, transparent); }
 .paste-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; margin-top: 16px; }
+.share-preview { margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: var(--paper-2, rgba(127,127,127,.12)); max-height: 40vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; }
+.share-preview .file-row { margin: 0; }
+.share-preview .share-more { margin-top: 6px; color: var(--ink-2); font-size: 14px; }
 
 /* ---------- toasts ---------- */
 .toasts {
