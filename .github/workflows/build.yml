@@ -1,0 +1,63 @@
+name: build
+
+# Tag v1.2.3 -> test, build dist/copyapp.exe with build.ps1 and attach it,
+# with SHA256SUMS, to the GitHub release of that tag (created if missing).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Version from tag
+        id: ver
+        shell: pwsh
+        run: |
+          $v = '${{ github.ref_name }}'.TrimStart('v')
+          if ($v -notmatch '^\d+\.\d+\.\d+$') { $v = '0.0.0' }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Vet and test
+        shell: pwsh
+        run: |
+          go vet ./...
+          if ($LASTEXITCODE) { exit 1 }
+          go test -count=1 ./...
+          if ($LASTEXITCODE) { exit 1 }
+
+      - name: Build
+        shell: pwsh
+        run: ./build.ps1 -Version ${{ steps.ver.outputs.version }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: copyapp-${{ steps.ver.outputs.version }}
+          path: |
+            dist/copyapp.exe
+            dist/SHA256SUMS
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          gh release view $tag *> $null
+          if ($LASTEXITCODE) { gh release create $tag --title "CopyApp $tag" --notes "See CHANGELOG.md." }
+          gh release upload $tag dist/copyapp.exe dist/SHA256SUMS --clobber

@@ -11,3 +11,15 @@ landing/
 landing-deploy.tar.gz
 copyapp-website.zip
 docs/HANDOFF.md
+
+# Big binaries and media stay out of git (release assets go to GitHub
+# Releases). The website folder site/ is managed separately and keeps its assets.
+*.exe
+*.mp4
+*.webm
+*.mov
+*.mkv
+*.zip
+*.tar.gz
+*.7z
+!site/**
