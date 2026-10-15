@@ -96,6 +96,8 @@ try {
     Check 'session: /status 200 paired' ((Invoke-RestMethod "$B/status" -Headers $hdr -SkipCertificateCheck).paired -eq $true)
     Check '/ca.crt closed without cookie after pairing' ((Invoke-WebRequest "$B/ca.crt" @opt).StatusCode -eq 404)
     Check '/ca.crt with session' ((Invoke-WebRequest "$B/ca.crt" -Headers $hdr @opt).StatusCode -eq 200)
+    $st = Invoke-RestMethod "$B/status" -Headers $hdr -SkipCertificateCheck
+    Check '/status has a short certificate code' ("$($st.shortFingerprint)".Length -ge 6) "$($st.shortFingerprint)"
     $r = Invoke-WebRequest "$B/" -Headers $hdr @opt; Check 'PWA index served' ($r.StatusCode -eq 200 -and $r.Content -match 'CopyApp')
 
     # phone -> PC text (real Windows clipboard)
@@ -106,6 +108,16 @@ try {
     Check 'send text -> 200' ($r.StatusCode -eq 200) $r.Content
     Start-Sleep -Milliseconds 500
     Check 'Windows clipboard has the text' ((Get-Clipboard) -eq $text) (Get-Clipboard)
+
+    # share-target fallback (POST /share, used when the service worker is not active)
+    Check 'no cookie POST /share -> 401' ((Invoke-WebRequest "$B/share" -Method POST -Body '{"text":"x"}' -ContentType application/json @opt).StatusCode -eq 401)
+    $r = Invoke-WebRequest "$B/share" -Method POST -Headers $hdr -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes('{"text":"shared via /share"}')) @opt
+    Check 'POST /share text -> 200' ($r.StatusCode -eq 200) $r.Content
+    Start-Sleep -Milliseconds 400
+    Check 'clipboard has the /share text' ((Get-Clipboard) -eq 'shared via /share')
+    $r = curl.exe -sk -o NUL -D - -X POST -H "Cookie: $($hdr.Cookie)" -H "Sec-Fetch-Mode: navigate" -F "file=@$files\fromPC.txt" "$B/share"
+    Check 'POST /share navigation -> 303 to /?sent=' ("$r" -match ' 303 ' -and "$r" -match '(?i)location: /.sent=') "$r"
+    Check '/share file saved' (Test-Path "$recv\fromPC.txt")
 
     # phone -> PC file
     $r = Invoke-WebRequest "$B/send" -Method POST -Headers $hdr -Form @{ file = Get-Item "$files\note-e2e.txt" } @opt
@@ -130,7 +142,19 @@ try {
     $r = Invoke-WebRequest "$B/item/$id" -Headers $hdr @opt
     Check 'pushed item downloads with its content' ("$($r.Content)" -eq 'pushed from PC e2e')
 
-    # loopback-only endpoints
+    # loopback-only endpoints: 403 without the local key, 200 with it (header or cookie)
+    foreach ($u in '/pairing', '/pairing/status') {
+        Check "local $u without key -> 403" ((Invoke-WebRequest "$L$u" @opt).StatusCode -eq 403)
+        Check "local $u wrong key -> 403" ((Invoke-WebRequest "$L$u" -Headers @{ 'X-CopyApp' = 'nope' } @opt).StatusCode -eq 403)
+        Check "local $u with X-CopyApp -> 200" ((Invoke-WebRequest "$L$u" -Headers $lh @opt).StatusCode -eq 200)
+    }
+    Check 'local /qr after pairing with key -> 410 (authorized, window closed)' ((Invoke-WebRequest "$L/qr" -Headers $lh @opt).StatusCode -eq 410)
+    Check 'pairing?k=wrong -> 403' ((Invoke-WebRequest "$L/pairing?k=nope" -MaximumRedirection 0 @opt).StatusCode -eq 403)
+    $r = Invoke-WebRequest "$L/pairing?k=$($lh.'X-CopyApp')" -SessionVariable ls @opt
+    $lc = $ls.Cookies.GetAllCookies() | Where-Object Name -eq 'copyapp_local'
+    Check 'pairing?k=KEY sets copyapp_local cookie, redirects to /pairing' ($r.StatusCode -eq 200 -and $lc -and $lc.HttpOnly -and $r.BaseResponse.RequestMessage.RequestUri.AbsolutePath -eq '/pairing')
+    Check 'local cookie alone opens /pairing/status' ((Invoke-WebRequest "$L/pairing/status" -WebSession $ls @opt).StatusCode -eq 200)
+    Check 'pairing/open without key -> 403' ((Invoke-WebRequest "$L/pairing/open" -Method POST @opt).StatusCode -eq 403)
     Check 'send-file without X-CopyApp -> 403' ((Invoke-WebRequest "$L/local/send-file?path=x" -Method POST @opt).StatusCode -eq 403)
     Check 'send-file with a wrong key -> 403' ((Invoke-WebRequest "$L/local/send-file?path=x" -Method POST -Headers @{ 'X-CopyApp' = '1' } @opt).StatusCode -eq 403)
     Check 'send-file with Origin -> 403' ((Invoke-WebRequest "$L/local/send-file?path=x" -Method POST -Headers @{ 'X-CopyApp' = $lh.'X-CopyApp'; Origin = 'http://evil' } @opt).StatusCode -eq 403)
@@ -149,7 +173,7 @@ finally {
     Get-Process copyapp -ErrorAction SilentlyContinue | Stop-Process -Force
     if (-not $hadRun) { Remove-ItemProperty $runKey -Name CopyApp -ErrorAction SilentlyContinue }
     if (-not $hadLnk) { Remove-Item $sendTo -Force -ErrorAction SilentlyContinue }
-    foreach ($f in 'note-e2e.txt', 'pic-e2e.png') { Remove-Item (Join-Path $recv $f) -Force -ErrorAction SilentlyContinue }
+    foreach ($f in 'note-e2e.txt', 'pic-e2e.png', 'fromPC.txt') { Remove-Item (Join-Path $recv $f) -Force -ErrorAction SilentlyContinue }
     if (-not $hadRecv -and (Test-Path $recv) -and -not (Get-ChildItem $recv)) { Remove-Item $recv -Force }
     Remove-Item $appdata, $files -Recurse -Force -ErrorAction SilentlyContinue
 }
