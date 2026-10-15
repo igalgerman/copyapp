@@ -39,4 +39,4 @@ Download and videos: https://copyapp.igalg.chatgpt.site/
 
 ## Publication
 
-The public website hosts the executable and both videos. Public GitHub source/repository creation was rejected by automatic approval review and needs the user's separate approval; no source was uploaded to GitHub.
+The public website hosts the executable and both videos. After explicit user approval, the app source was published at https://github.com/igalgerman/copyapp. Website files, temporary files, the private handoff, EXE and videos are excluded from the source repository.
