@@ -115,6 +115,23 @@ func TestOpenPairingRotatesToken(t *testing.T) {
 	}
 }
 
+func TestSetClock(t *testing.T) {
+	base := time.Now()
+	a := New()
+	a.SetClock(func() time.Time { return base })
+	tok := a.OpenPairing()
+	if d := a.PairingDeadline(); !d.Equal(base.Add(PairWindow)) {
+		t.Fatalf("deadline %v", d)
+	}
+	a.SetClock(func() time.Time { return base.Add(PairWindow) })
+	if _, ok := a.Exchange(tok); ok {
+		t.Fatal("token valid at deadline")
+	}
+	if !a.PairingDeadline().IsZero() {
+		t.Fatal("deadline should be zero when closed")
+	}
+}
+
 func TestPersist(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "session")
 	a := New()

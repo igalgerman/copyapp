@@ -30,6 +30,13 @@ type Auth struct {
 
 func New() *Auth { return &Auth{now: time.Now} }
 
+// SetClock replaces the time source (for tests).
+func (a *Auth) SetClock(now func() time.Time) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.now = now
+}
+
 func randomHex() string {
 	var b [secretLen]byte
 	if _, err := rand.Read(b[:]); err != nil {
