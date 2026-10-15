@@ -317,6 +317,9 @@ func jsonError(w http.ResponseWriter, code int, errCode, msg string) {
 // ---------- static ----------
 
 func staticHandler(fsys fs.FS) http.Handler {
+	// Windows registry MIME mappings may lack this; never rely on them.
+	mime.AddExtensionType(".woff2", "font/woff2")
+	favicon, _ := fs.ReadFile(fsys, "icon-192.png")
 	fileServer := http.FileServerFS(fsys)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
@@ -325,6 +328,15 @@ func staticHandler(fsys fs.FS) http.Handler {
 			return
 		}
 		switch {
+		case p == "/favicon.ico":
+			if len(favicon) == 0 {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			w.Header().Set("Content-Type", "image/png")
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+			w.Write(favicon)
+			return
 		case p == "/" || p == "/index.html" || p == "/sw.js":
 			w.Header().Set("Cache-Control", "no-cache")
 		case strings.HasSuffix(p, ".webmanifest") || p == "/manifest.json":

@@ -746,3 +746,17 @@ func TestPairingOpenRequiresSameOrigin(t *testing.T) {
 		t.Fatalf("same-origin open: %d", w.Code)
 	}
 }
+
+// ---- static: favicon and font MIME ----
+
+func TestFaviconAndWoff2(t *testing.T) {
+	e := newEnv(t, 0)
+	w := e.do(e.req("GET", "/favicon.ico", nil))
+	if w.Code != 200 || w.Header().Get("Content-Type") != "image/png" || w.Body.Len() == 0 {
+		t.Fatalf("favicon: %d %q len=%d", w.Code, w.Header().Get("Content-Type"), w.Body.Len())
+	}
+	w = e.do(e.req("GET", "/bricolage.woff2", nil))
+	if w.Code != 200 || w.Header().Get("Content-Type") != "font/woff2" {
+		t.Fatalf("woff2: %d %q", w.Code, w.Header().Get("Content-Type"))
+	}
+}
