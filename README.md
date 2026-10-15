@@ -89,8 +89,8 @@ Open the **CopyApp Desktop shortcut** to change the receive destination, folder,
 
 ## Videos
 
-- [Install video](https://copyapp.igalg.chatgpt.site/assets/install.mp4)
-- [Use video](https://copyapp.igalg.chatgpt.site/assets/use.mp4)
+- [Install video](https://copyapp.igalg.chatgpt.site/assets/install-1.0.0.mp4)
+- [Use video](https://copyapp.igalg.chatgpt.site/assets/use-1.0.0.mp4)
 
 The website also includes these videos.
 

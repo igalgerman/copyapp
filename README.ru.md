@@ -89,8 +89,8 @@ https://copyapp.igalg.chatgpt.site/
 
 ## Видео
 
-- [Видео об установке](https://copyapp.igalg.chatgpt.site/assets/install.mp4)
-- [Видео об использовании](https://copyapp.igalg.chatgpt.site/assets/use.mp4)
+- [Видео об установке](https://copyapp.igalg.chatgpt.site/assets/install-1.0.0.mp4)
+- [Видео об использовании](https://copyapp.igalg.chatgpt.site/assets/use-1.0.0.mp4)
 
 Эти видео также доступны на сайте.
 

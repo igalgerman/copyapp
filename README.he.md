@@ -91,8 +91,8 @@ https://copyapp.igalg.chatgpt.site/
 
 ## סרטונים
 
-- [סרטון התקנה](https://copyapp.igalg.chatgpt.site/assets/install.mp4)
-- [סרטון שימוש](https://copyapp.igalg.chatgpt.site/assets/use.mp4)
+- [סרטון התקנה](https://copyapp.igalg.chatgpt.site/assets/install-1.0.0.mp4)
+- [סרטון שימוש](https://copyapp.igalg.chatgpt.site/assets/use-1.0.0.mp4)
 
 הסרטונים זמינים גם באתר.
 
