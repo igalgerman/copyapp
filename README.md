@@ -1,5 +1,7 @@
 # CopyApp
 
+**[עברית](README.he.md) · [Русский](README.ru.md) · English**
+
 CopyApp lets you copy and paste between your Windows PC and your Android phone.
 
 - Copy and paste **text**, **images**, and **files** between your PC and your phone.
@@ -46,6 +48,7 @@ https://github.com/igalgerman/copyapp/releases/latest
 - It works with **one phone** paired to one PC.
 - Items are kept for **10 minutes**.
 - The largest item you can send is **200 MB**.
+- The app speaks **Hebrew** (default), **Russian** and **English**. Switch with **עב / РУ / EN** at the top of the phone screen, and with **שפה / Язык / Language** in the tray menu.
 
 ---
 
