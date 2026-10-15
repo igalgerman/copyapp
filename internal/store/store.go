@@ -19,6 +19,8 @@ import (
 const (
 	// MaxItemSize is the per-item cap (200 MB).
 	MaxItemSize = 200 << 20
+	// MaxTotalSize caps all outbox items together (400 MB).
+	MaxTotalSize = 400 << 20
 	// Expiry is how long items stay in the outbox.
 	Expiry = 10 * time.Minute
 
@@ -28,6 +30,10 @@ const (
 // ErrTooLarge is returned when data exceeds the allowed size.
 var ErrTooLarge = errors.New("store: item too large")
 
+// ErrOutboxFull is returned by Add when the outbox would exceed MaxTotalSize.
+// It matches ErrTooLarge with errors.Is.
+var ErrOutboxFull = fmt.Errorf("%w: outbox is full, try again in a few minutes", ErrTooLarge)
+
 type Item struct {
 	ID, Kind, Name, Mime string
 	Data                 []byte
@@ -35,13 +41,14 @@ type Item struct {
 } // Kind: "text"|"image"|"file"
 
 type Store struct {
-	mu    sync.Mutex
-	items map[string]Item
-	now   func() time.Time
+	mu       sync.Mutex
+	items    map[string]Item
+	now      func() time.Time
+	maxTotal int
 }
 
 func New() *Store {
-	return &Store{items: map[string]Item{}, now: time.Now}
+	return &Store{items: map[string]Item{}, now: time.Now, maxTotal: MaxTotalSize}
 }
 
 func (s *Store) evictLocked() {
@@ -53,8 +60,9 @@ func (s *Store) evictLocked() {
 	}
 }
 
-// Add stores the item and returns its new ID. Rejects items over 200 MB and
-// evicts items older than 10 minutes.
+// Add stores the item and returns its new ID. Rejects items over 200 MB or
+// that would push the outbox over 400 MB, and evicts items older than 10
+// minutes.
 func (s *Store) Add(it Item) (string, error) {
 	if len(it.Data) > MaxItemSize {
 		return "", ErrTooLarge
@@ -68,6 +76,13 @@ func (s *Store) Add(it Item) (string, error) {
 	defer s.mu.Unlock()
 	it.Created = s.now()
 	s.evictLocked()
+	total := len(it.Data)
+	for _, x := range s.items {
+		total += len(x.Data)
+	}
+	if total > s.maxTotal {
+		return "", ErrOutboxFull
+	}
 	s.items[it.ID] = it
 	return it.ID, nil
 }
@@ -100,13 +115,24 @@ func isReserved(name string) bool {
 	}
 	stem = strings.ToUpper(strings.TrimRight(stem, " "))
 	switch stem {
-	case "CON", "PRN", "AUX", "NUL":
+	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
 		return true
 	}
-	if len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) {
-		return stem[3] >= '1' && stem[3] <= '9'
+	if strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT") {
+		switch stem[3:] {
+		case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+			string(rune(0xB9)), string(rune(0xB2)), string(rune(0xB3)): // superscript 1, 2, 3
+			return true
+		}
 	}
 	return false
+}
+
+// invisible reports bidi overrides/isolates, zero-width and BOM characters,
+// which can disguise a file's real extension.
+func invisible(r rune) bool {
+	return (r >= 0x200B && r <= 0x200F) || (r >= 0x202A && r <= 0x202E) ||
+		(r >= 0x2066 && r <= 0x2069) || r == 0xFEFF
 }
 
 // SanitizeName turns an untrusted client file name into a safe Windows file name.
@@ -115,7 +141,7 @@ func SanitizeName(name string) string {
 		name = name[i+1:]
 	}
 	name = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f || strings.ContainsRune(`<>:"|?*`, r) || r == utf8.RuneError {
+		if r < 0x20 || (r >= 0x7f && r < 0xa0) || invisible(r) || strings.ContainsRune(`<>:"|?*`, r) || r == utf8.RuneError {
 			return -1
 		}
 		return r

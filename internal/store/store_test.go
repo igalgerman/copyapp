@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -73,5 +74,52 @@ func TestAddTooBig(t *testing.T) {
 	s := New()
 	if _, err := s.Add(Item{Data: make([]byte, MaxItemSize+1)}); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestSanitizeStripsBidiAndInvisible(t *testing.T) {
+	r := func(c rune) string { return string(c) }
+	for in, want := range map[string]string{
+		"invoice" + r(0x202E) + "txt.exe":                            "invoicetxt.exe",
+		"a" + r(0x200B) + "b" + r(0x200F) + "c" + r(0xFEFF) + ".txt": "abc.txt",
+		"x" + r(0x2066) + "y" + r(0x2069) + r(0x202A) + ".pdf":       "xy.pdf",
+		r(0x200E) + r(0x200D):                                        "file",
+		"CONIN$":                                                     "_CONIN$",
+		"conout$.txt":                                                "_conout$.txt",
+		"COM" + r(0xB9) + ".txt":                                     "_COM" + r(0xB9) + ".txt",
+		"lpt" + r(0xB3):                                              "_lpt" + r(0xB3),
+		"COM" + r(0xB2) + r(0xB3):                                    "COM" + r(0xB2) + r(0xB3),
+		"COM0":                                                       "_COM0",
+	} {
+		if got := SanitizeName(in); got != want {
+			t.Errorf("%q -> %q want %q", in, got, want)
+		}
+	}
+}
+
+func TestOutboxTotalCap(t *testing.T) {
+	s := New()
+	s.maxTotal = 10
+	if _, err := s.Add(Item{Data: make([]byte, 6)}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.Add(Item{Data: make([]byte, 5)})
+	if !errors.Is(err, ErrTooLarge) || !errors.Is(err, ErrOutboxFull) {
+		t.Fatalf("want outbox full, got %v", err)
+	}
+	if _, err := s.Add(Item{Data: make([]byte, 4)}); err != nil {
+		t.Fatalf("fits exactly: %v", err)
+	}
+}
+
+func TestOutboxCapFreedByExpiry(t *testing.T) {
+	s := New()
+	s.maxTotal = 10
+	now := time.Now()
+	s.now = func() time.Time { return now }
+	s.Add(Item{Data: make([]byte, 10)})
+	now = now.Add(Expiry + time.Second)
+	if _, err := s.Add(Item{Data: make([]byte, 10)}); err != nil {
+		t.Fatalf("expired items must free space: %v", err)
 	}
 }
