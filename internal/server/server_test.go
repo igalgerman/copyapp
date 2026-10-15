@@ -23,6 +23,7 @@ import (
 
 	"github.com/igalgerman/copyapp/internal/auth"
 	"github.com/igalgerman/copyapp/internal/store"
+	"github.com/igalgerman/copyapp/internal/tlsutil"
 )
 
 // ---- fakes and helpers ----
@@ -78,9 +79,10 @@ func newEnv(t *testing.T, max int64) *env {
 	e.dir = filepath.Join(t.TempDir(), "recv")
 	e.s = New(Config{
 		Auth: e.a, Store: e.st, Clip: e.clip, SaveDir: e.dir,
-		CAPEM:    []byte("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"),
-		MaxBytes: max, LocalSecret: testLocalKey,
-		BaseURL:  func() string { return "https://192.168.1.5:8443" },
+		CAPEM:       []byte("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"),
+		MaxBytes:    max,
+		LocalSecret: testLocalKey,
+		BaseURL:     func() string { return "https://192.168.1.5:8443" },
 		Logf: func(f string, a ...any) {
 			e.lmu.Lock()
 			defer e.lmu.Unlock()
@@ -678,6 +680,19 @@ func TestStatus(t *testing.T) {
 	w := e.do(e.authed("GET", "/status", nil, c))
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"paired":true`) {
 		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	short := tlsutil.ShortFingerprint(e.s.cfg.CAPEM)
+	if short == "" || !strings.Contains(w.Body.String(), `"shortFingerprint":"`+short+`"`) {
+		t.Fatalf("status lacks short fingerprint %q: %s", short, w.Body)
+	}
+}
+
+func TestPairingPageShowsShortFingerprint(t *testing.T) {
+	e := newEnv(t, 0)
+	e.s.StartPairing()
+	body := e.do(local(e, "GET", "/pairing")).Body.String()
+	if !strings.Contains(body, tlsutil.ShortFingerprint(e.s.cfg.CAPEM)) || !strings.Contains(body, "match before installing") {
+		t.Fatal("pairing page must show the short fingerprint and the check instruction")
 	}
 }
 

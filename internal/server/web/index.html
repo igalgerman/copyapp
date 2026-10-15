@@ -152,8 +152,12 @@
 <dialog class="sheet" id="sheet-settings" aria-labelledby="settings-title">
   <div class="sheet-grip" aria-hidden="true"></div>
   <h2 class="sheet-title" id="settings-title">Connected to your PC</h2>
-  <p class="sheet-text">To check it’s really your PC, compare this with the <b>certificate fingerprint</b> in the PC’s Pair phone window.</p>
-  <p class="fingerprint" id="fingerprint" aria-label="Certificate fingerprint">…</p>
+  <p class="sheet-text">To check it’s really your PC, compare this <b>certificate code</b> with the one in the PC’s Pair phone window.</p>
+  <div class="fp-check">
+    <span class="fp-label">Certificate code</span>
+    <p class="fp-short" data-fp-short aria-label="Certificate code">…</p>
+  </div>
+  <p class="fingerprint" id="fingerprint" aria-label="Full certificate fingerprint">…</p>
   <div class="sheet-list">
     <button type="button" class="sheet-item" data-open="sheet-cert">
       <svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg>
@@ -171,6 +175,11 @@
   <div class="sheet-grip" aria-hidden="true"></div>
   <h2 class="sheet-title" id="cert-title">Remove the “Not secure” warning</h2>
   <p class="sheet-text">One-time setup. Your phone will trust this PC, and you can add CopyApp to your home screen.</p>
+  <div class="fp-check">
+    <span class="fp-label">Certificate code</span>
+    <p class="fp-short" data-fp-short aria-label="Certificate code">…</p>
+    <p class="fp-note">Check these match the code in your PC’s <b>Pair phone</b> window before installing. If they don’t, don’t install it.</p>
+  </div>
   <a class="btn btn-primary btn-block" id="cert-download" href="/ca.crt" download="copyapp-ca.crt">
     <svg class="ic" aria-hidden="true"><use href="#i-download"/></svg> Download certificate
   </a>

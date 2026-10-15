@@ -543,6 +543,7 @@
     }
     d.showModal();
     if (id === 'sheet-paste') setTimeout(() => $('#paste-text').focus(), 60);
+    if (id === 'sheet-cert' || id === 'sheet-settings') loadCertFp();
   }
   document.addEventListener('click', (e) => {
     const opener = e.target.closest('[data-open]');
@@ -568,6 +569,7 @@
       const r = await fetch('/ca.crt', { method: 'GET', cache: 'no-store' });
       if (!r.ok) throw new Error('closed');
       const blob = await r.blob();
+      await learnShortFp(await blob.text());
       const a = el('a', { href: URL.createObjectURL(blob), download: 'copyapp-ca.crt' });
       body.append(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 10000);
@@ -624,8 +626,37 @@
       if (!r.ok) return 'down';
       const j = await r.json();
       if (j.fingerprint) $('#fingerprint').textContent = formatFingerprint(j.fingerprint);
+      if (j.shortFingerprint && !shortFp) showShortFp(j.shortFingerprint);
       return 'ok';
     } catch { return 'down'; }
+  }
+  // The short code ("AB12 CD34 EF56 7890") is the first 16 hex digits of the
+  // CA's SHA-256 fingerprint. Computed here from the certificate file itself
+  // when possible, so it describes exactly what gets installed.
+  let shortFp = '';
+  function showShortFp(s) {
+    for (const n of document.querySelectorAll('[data-fp-short]')) n.textContent = s;
+  }
+  async function shortFpOfPEM(pem) {
+    const m = /-----BEGIN CERTIFICATE-----([\s\S]+?)-----END CERTIFICATE-----/.exec(pem);
+    if (!m || !(window.crypto && crypto.subtle)) return '';
+    const der = Uint8Array.from(atob(m[1].replace(/\s+/g, '')), (c) => c.charCodeAt(0));
+    const h = new Uint8Array(await crypto.subtle.digest('SHA-256', der));
+    const hex = Array.from(h.slice(0, 8), (x) => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+    return hex.match(/.{4}/g).join(' ');
+  }
+  async function learnShortFp(pemText) {
+    try {
+      const s = await shortFpOfPEM(pemText);
+      if (s) { shortFp = s; showShortFp(s); }
+    } catch { /* keep the server's value */ }
+  }
+  async function loadCertFp() {
+    if (shortFp) return;
+    try {
+      const r = await fetch('/ca.crt', { cache: 'no-store' });
+      if (r.ok) await learnShortFp(await r.text());
+    } catch { /* PC not sharing it right now */ }
   }
   function formatFingerprint(fp) {
     // Same AB:CD:… form as the PC's pairing window; allow line breaks after colons.

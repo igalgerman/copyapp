@@ -40,6 +40,7 @@ import (
 	"github.com/igalgerman/copyapp/internal/auth"
 	"github.com/igalgerman/copyapp/internal/secret"
 	"github.com/igalgerman/copyapp/internal/store"
+	"github.com/igalgerman/copyapp/internal/tlsutil"
 )
 
 //go:embed web
@@ -433,7 +434,9 @@ func (s *Server) caCert(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"paired": true, "fingerprint": fingerprint(s.cfg.CAPEM)})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"paired": true, "fingerprint": fingerprint(s.cfg.CAPEM), "shortFingerprint": tlsutil.ShortFingerprint(s.cfg.CAPEM),
+	})
 }
 
 func (s *Server) unpair(w http.ResponseWriter, r *http.Request) {

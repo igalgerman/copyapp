@@ -77,6 +77,7 @@ func (s *Server) pairingPage(w http.ResponseWriter, r *http.Request) {
 		"Nonce":       nonce,
 		"State":       st,
 		"Fingerprint": fingerprint(s.cfg.CAPEM),
+		"Short":       tlsutil.ShortFingerprint(s.cfg.CAPEM),
 		"Stamp":       time.Now().UnixNano(),
 	})
 }
@@ -106,7 +107,11 @@ h1{margin:0 0 4px;font-size:24px;font-weight:600}
 ol{margin:0;padding-left:20px}
 ol li{margin:0 0 10px}
 .note{color:var(--muted);font-size:14px}
-.fp{font:12px/1.4 Consolas,monospace;color:var(--muted);word-break:break-all;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}
+.fp{font:12px/1.4 Consolas,monospace;color:var(--muted);word-break:break-all;margin-top:12px}
+.fpbox{margin-top:16px;padding:16px 18px;border:2px solid var(--accent);border-radius:12px}
+.fplabel{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.fpshort{font:700 32px/1.25 Consolas,monospace;letter-spacing:.06em;margin:4px 0 6px;white-space:nowrap}
+@media (max-width:420px){.fpshort{font-size:24px}}
 .state{display:none;flex-direction:column;align-items:center;justify-content:center;width:280px;height:280px;text-align:center;
  border:1px dashed var(--line);border-radius:12px;gap:12px;padding:16px}
 .big{font-size:48px;line-height:1}
@@ -134,13 +139,20 @@ body.paired #paired,body.expired #expired{display:flex}
    <li><b>Scan the code</b> with your Android phone's camera and open the link in Chrome.</li>
    <li>The first time, Chrome warns that the connection is not private. Tap <b>Advanced</b> &rarr; <b>Proceed</b>.
      <span class="note">This is expected until step 3.</span></li>
-   <li><b>Install the CopyApp certificate</b> (once): in the app tap <b>Install certificate</b>, then open
+   <li><b>Install the CopyApp certificate</b> (once): first check that the code the app shows matches the
+     certificate code below. Then in the app tap <b>Install certificate</b>, and open
      Settings &rarr; Security &amp; privacy &rarr; More security settings &rarr; Encryption &amp; credentials &rarr;
      Install a certificate &rarr; <b>CA certificate</b>, and pick <code>copyapp-ca.crt</code>.
      <span class="note">Menu names vary slightly between phone brands.</span></li>
    <li>Reopen the app in Chrome and choose <b>Add to Home screen</b> / <b>Install app</b>. CopyApp then appears in the share sheet.</li>
   </ol>
-  <div class="fp">Certificate fingerprint (SHA-256), shown by Android when installing:<br>{{.Fingerprint}}</div>
+  <div class="fpbox">
+   <div class="fplabel">Certificate code</div>
+   <div class="fpshort">{{.Short}}</div>
+   <div class="note">The CopyApp app on your phone shows the same code next to <b>Download certificate</b>.
+    <b>Check these match before installing.</b> If they differ, don't install: someone else may be on your Wi-Fi.</div>
+  </div>
+  <div class="fp">Full SHA-256 fingerprint (Android shows it under Settings &rarr; Trusted credentials &rarr; User):<br>{{.Fingerprint}}</div>
  </section>
 </main>
 <script nonce="{{.Nonce}}">

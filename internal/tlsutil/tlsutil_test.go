@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -322,5 +323,20 @@ func TestCAIsUsableRoot(t *testing.T) {
 	}
 	if len(Fingerprint(caPEM)) != 64+31 {
 		t.Fatalf("fingerprint format: %q", Fingerprint(caPEM))
+	}
+}
+
+func TestShortFingerprint(t *testing.T) {
+	_, caPEM, err := Load(t.TempDir(), fixed(net.ParseIP("192.168.1.5")), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := strings.ReplaceAll(Fingerprint(caPEM), ":", "")
+	want := full[0:4] + " " + full[4:8] + " " + full[8:12] + " " + full[12:16]
+	if got := ShortFingerprint(caPEM); got != want {
+		t.Fatalf("short %q, want %q", got, want)
+	}
+	if ShortFingerprint([]byte("junk")) != "" {
+		t.Fatal("junk must give empty")
 	}
 }

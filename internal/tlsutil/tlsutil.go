@@ -164,6 +164,16 @@ func Fingerprint(certPEM []byte) string {
 	return strings.Join(parts, ":")
 }
 
+// ShortFingerprint returns the first 16 hex digits of Fingerprint in groups
+// of four ("AB12 CD34 EF56 7890"), short enough to compare by eye.
+func ShortFingerprint(certPEM []byte) string {
+	hex := strings.ReplaceAll(Fingerprint(certPEM), ":", "")
+	if len(hex) < 16 {
+		return ""
+	}
+	return hex[0:4] + " " + hex[4:8] + " " + hex[8:12] + " " + hex[12:16]
+}
+
 func loadOrCreateCA(dir string, kp KeyProtector) (*x509.Certificate, *ecdsa.PrivateKey, error) {
 	cp, kpath := filepath.Join(dir, caCertFile), filepath.Join(dir, caKeyFile)
 	_, e1 := os.Stat(cp)
