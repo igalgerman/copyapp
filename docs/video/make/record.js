@@ -9,6 +9,9 @@ const mocks = require('./mocks');
 const scenario = process.argv[2];
 const LPORT = process.env.COPYAPP_LPORT, EXE = process.env.COPYAPP_EXE, RAW = path.join(process.env.RAW_DIR, scenario), WEB = process.env.WEB_DIR;
 const L = `http://127.0.0.1:${LPORT}`;
+// per-launch local key: the PC-only routes need it (header on fetches, ?k= to open a page in the browser)
+const KEY = fs.readFileSync(path.join(process.env.COPYAPP_APPDATA, 'CopyApp', 'local.key'), 'utf8').trim();
+const LH = { 'X-CopyApp': KEY };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const dataUri = (file, mime) => `data:${mime};base64,` + fs.readFileSync(file).toString('base64');
 const ICON = dataUri(path.join(WEB, 'icon-192.png'), 'image/png');
@@ -41,7 +44,7 @@ async function tap(page, locator) {
 }
 
 async function ctxPair(browser) { // pairs a phone like the camera would, returns a storageState
-  const png = PNG.sync.read(Buffer.from(await (await fetch(`${L}/qr`)).arrayBuffer()));
+  const png = PNG.sync.read(Buffer.from(await (await fetch(`${L}/qr`, { headers: LH })).arrayBuffer()));
   const r = jsQR(new Uint8ClampedArray(png.data), png.width, png.height);
   if (!r) throw new Error('no QR'); BASE = new URL(r.data).origin;
   const c = await browser.newContext({ ignoreHTTPSErrors: true });
@@ -49,7 +52,7 @@ async function ctxPair(browser) { // pairs a phone like the camera would, return
   const st = await c.storageState(); await c.close(); return st;
 }
 async function openPairing() { // same as tray "Pair phone": opens a fresh 2-minute window
-  await fetch(`${L}/pairing/open`, { method: 'POST', headers: { Origin: L } });
+  await fetch(`${L}/pairing/open`, { method: 'POST', headers: { Origin: L, ...LH } });
 }
 let BASE = "";
 async function lanBase() { return BASE; }
@@ -121,10 +124,10 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
     await sleep(4200);
 
     await openPairing();
-    await pc.goto(`${L}/pairing`); cap('4. CopyApp shows a pairing page with a QR code');
+    await pc.goto(`${L}/pairing?k=${KEY}`); cap('4. CopyApp shows a pairing page with a QR code');
     await sleep(3600);
 
-    const qrPng = await (await fetch(`${L}/qr`)).arrayBuffer();
+    const qrPng = await (await fetch(`${L}/qr`, { headers: LH })).arrayBuffer();
     const png = PNG.sync.read(Buffer.from(qrPng));
     const pairUrl = jsQR(new Uint8ClampedArray(png.data), png.width, png.height).data;
     await ph.setContent(mocks.phoneCamera('data:image/png;base64,' + Buffer.from(qrPng).toString('base64')));
@@ -138,6 +141,9 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
     await ph.waitForSelector('#setup-card:not([hidden])', { timeout: 8000 }).catch(() => {});
     cap('6. One time only: tap "Show me how" to install the certificate');
     await sleep(2800); await tap(ph, '#setup-card .btn-primary'); await sleep(1500);
+    await ph.waitForFunction(() => { const n = document.querySelector('#sheet-cert [data-fp-short]'); return n && n.textContent.trim().length > 3 && n.textContent.trim() !== '…'; }, null, { timeout: 8000 }).catch(() => console.log('WARN: short code not shown'));
+    await pc.goto(`${L}/pairing?k=${KEY}`); // PC window shows the same code to compare
+    cap('Check the code matches your PC'); await sleep(5500);
     cap('Follow the 4 steps: Settings > Security > Install a certificate');
     // gently scroll through the real certificate steps
     const h = await ph.evaluate(() => { const d = document.getElementById('sheet-cert'); return d.scrollHeight - d.clientHeight; });
