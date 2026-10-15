@@ -7,6 +7,8 @@
 //	GET  /ca.crt                 CA certificate; while pairing is open, or with a session
 //	GET  /status                 session check: {"paired":true,"fingerprint":"..."}
 //	POST /send                   phone -> PC (JSON {"text":...} or multipart)
+//	POST /share                  same as /send; Android share target (sw.js normally
+//	                             intercepts it, see web/sw.js)
 //	GET  /events                 SSE stream of outbox items (PC -> phone)
 //	GET  /item/{id}              outbox item bytes
 //	POST /unpair                 drop the session
@@ -123,6 +125,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("GET /ca.crt", s.caCert)
 	mux.HandleFunc("GET /status", s.requireAuth(s.status))
 	mux.HandleFunc("POST /send", sameSite(s.requireAuth(s.send)))
+	mux.HandleFunc("POST /share", sameSite(s.requireAuth(s.send))) // share target fallback when sw.js is absent
 	mux.HandleFunc("GET /events", s.requireAuth(s.events))
 	mux.HandleFunc("GET /item/{id}", s.requireAuth(s.item))
 	mux.HandleFunc("POST /unpair", sameSite(s.requireAuth(s.unpair)))

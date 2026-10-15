@@ -109,6 +109,7 @@
     clipboard: ['Your PC’s clipboard is busy', 'Another app is using it. Try again in a moment.'],
     save: ['Your PC couldn’t save the file', 'Check that the PC has enough free space.'],
     network: ['Can’t reach your PC', 'Make sure both are on the same Wi‑Fi and CopyApp is running.'],
+    share: ['Sharing didn’t work', 'Try sharing again, or open CopyApp and pick the file.'],
     copy: ['Couldn’t copy on this phone', 'Your browser blocked the clipboard. Try again, or long-press to copy.'],
   };
   function errorText(code) { return ERRORS[code] || ERRORS.bad_request; }
@@ -747,15 +748,59 @@
     const q = new URLSearchParams(location.search);
     const sent = q.get('sent');
     const err = q.get('error');
-    if (sent || err) history.replaceState(null, '', '/');
-    return { sent, err };
+    const share = q.get('share') === '1';
+    if (sent || err || share) history.replaceState(null, '', '/');
+    return { sent, err, share };
   }
 
+  // Android shares land in sw.js, which stashes them in the Cache API and
+  // opens /?share=1. Read the stash once (then delete it) and send it like a
+  // normal pick, so the request is same-origin and carries the session cookie.
+  const SHARE_CACHE = 'copyapp-share-v1';
+  async function takeShared() {
+    if (!('caches' in window)) return null;
+    try {
+      const cache = await caches.open(SHARE_CACHE);
+      const m = await cache.match('/__share/meta');
+      if (!m) return null;
+      const meta = await m.json();
+      const files = [];
+      for (const f of meta.files || []) {
+        const r = await cache.match(f.key);
+        if (r) files.push(new File([await r.blob()], f.name || 'file', { type: f.type || '' }));
+      }
+      return { ...meta, files };
+    } catch {
+      return null;
+    } finally {
+      try { await caches.delete(SHARE_CACHE); } catch { /* nothing stashed */ }
+    }
+  }
+  async function sendShared() {
+    const s = await takeShared();
+    if (!s || Date.now() - (s.at || 0) > 10 * 60 * 1000) {
+      toast('err', ...errorText('share'));
+      return;
+    }
+    if (s.files.length) return sendFiles(s.files);
+    // Same rules as the PC's own share handling: text, then the link, else the title.
+    let t = s.text || '';
+    if (s.url && !t.includes(s.url)) t = (t.trim() ? t + '\n' : '') + s.url;
+    if (!t.trim()) t = s.title || '';
+    if (!t.trim()) return toast('err', ...errorText('empty'));
+    return sendText(t);
+  }
+
+  let shareWaiting = false;
   async function start() {
-    const { sent, err } = readQuery();
+    const q = readQuery();
+    const { sent, err } = q;
+    if (q.share) shareWaiting = true; // survives the retry below, which re-reads a clean URL
+    const share = shareWaiting;
     const s = await checkStatus();
+    if (share && s === 'unpaired') { shareWaiting = false; takeShared(); } // drop it: nowhere to send
     if (s === 'unpaired') {
-      goUnpaired(err === 'unauthorized' ? 'Sharing didn’t work because this phone isn’t paired. Scan the QR code on your PC first.' : null);
+      goUnpaired(err === 'unauthorized' || share ? 'Sharing didn’t work because this phone isn’t paired. Scan the QR code on your PC first.' : null);
       return;
     }
     if (s === 'down' && store.get('paired') !== '1') {
@@ -775,6 +820,7 @@
     } else if (err) {
       toast('err', ...errorText(err));
     }
+    if (share) { shareWaiting = false; sendShared(); } // offline is fine: the card offers Retry
   }
 
   if ('serviceWorker' in navigator && window.isSecureContext) {
