@@ -12,7 +12,7 @@ Use this explicit fallback when native capture is unavailable. Actual app pages,
 Install/shortcut folders, data and received files are temporary; browser opening and real autostart writes are disabled.
 Public Wi-Fi names, usernames, IP text and displayed QR pixels are sanitized. Actual pairing decodes the real QR off-screen.
 #>
-param([ValidateSet('install','use','both')]$Only = 'both', [switch]$NoBuild, [switch]$ComposeOnly, [string]$WorkDir, [string]$StartupPng, [switch]$IllustrateNative)
+param([ValidateSet('install','use','both')]$Only = 'both', [switch]$NoBuild, [switch]$ComposeOnly, [string]$WorkDir, [string]$StartupPng, [switch]$IllustrateNative, [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.0.2')
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path "$PSScriptRoot\..\..\..").Path
 $exe  = Join-Path $root 'output\test-bin\copyapp.exe'
@@ -59,16 +59,20 @@ $env:NODE_PATH = "$node\node_modules"; $env:FFMPEG = $ffmpeg; $env:RAW_DIR = $ra
 $env:OUT_DIR = Join-Path $root 'docs\video'; $env:WEB_DIR = Join-Path $root 'internal\server\web'; $env:COPYAPP_EXE = $exe
 if (Get-Process copyapp -ErrorAction SilentlyContinue) { throw 'copyapp.exe is already running; quit it first' }
 if (-not $NoBuild -and -not $ComposeOnly) {
-    pwsh -NoProfile -File (Join-Path $root 'build.ps1') -LoopbackTest
+    pwsh -NoProfile -File (Join-Path $root 'build.ps1') -LoopbackTest -Version $Version
     if ($LASTEXITCODE) { throw 'build failed' }
 }
 . (Join-Path $root 'docs\e2e\test-binary.ps1')
 if (-not $ComposeOnly) { Assert-LoopbackTestBinary $exe }
 $oldAppdata = $env:APPDATA
-$testEnv = @('COPYAPP_NO_OSD','COPYAPP_PORTABLE','COPYAPP_NO_BROWSER','COPYAPP_SKIP_PROMPTS','COPYAPP_NO_AUTOSTART_WRITE','COPYAPP_RECEIVE_DIR','COPYAPP_DATA_DIR','COPYAPP_WIFI_NAME','COPYAPP_INSTALL_DIR','COPYAPP_DESKTOP_DIR','COPYAPP_STARTMENU_DIR','COPYAPP_SENDTO_DIR','COPYAPP_APPDATA','COPYAPP_LPORT','COPYAPP_PID','CAP_DIR','COPYAPP_ILLUSTRATE_NATIVE')
+$testEnv = @('COPYAPP_NO_OSD','COPYAPP_PORTABLE','COPYAPP_NO_BROWSER','COPYAPP_SKIP_PROMPTS','COPYAPP_NO_AUTOSTART_WRITE','COPYAPP_RECEIVE_DIR','COPYAPP_DATA_DIR','COPYAPP_WIFI_NAME','COPYAPP_INSTALL_DIR','COPYAPP_DESKTOP_DIR','COPYAPP_STARTMENU_DIR','COPYAPP_SENDTO_DIR','COPYAPP_APPDATA','COPYAPP_LPORT','COPYAPP_PID','CAP_DIR','COPYAPP_ILLUSTRATE_NATIVE','COPYAPP_RECORD_VERSION')
 $previousEnv = @{}; foreach ($key in $testEnv) { $previousEnv[$key] = [Environment]::GetEnvironmentVariable($key) }
 $scen = if ($Only -eq 'both') { 'install','use' } else { @($Only) }
 try {
+    if (-not $ComposeOnly) {
+        $env:COPYAPP_RECORD_VERSION = (Get-Item -LiteralPath $exe).VersionInfo.ProductVersion -replace '\.0$', ''
+        if ($env:COPYAPP_RECORD_VERSION -ne $Version) { throw "Expected CopyApp $Version; rebuild the loopback test EXE with this version first" }
+    }
     foreach ($s in $scen) {
         if (-not $ComposeOnly) {
             $appdata = Join-Path $work "appdata-$s"

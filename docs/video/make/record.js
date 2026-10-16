@@ -129,7 +129,9 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
       if (!r.ok) throw new Error('Control browser session rejected: ' + r.status);
       return r.json();
     });
-    if (state.version !== '1.0.1') throw new Error('Recordings require final CopyApp 1.0.1');
+    if (!process.env.COPYAPP_RECORD_VERSION || state.version !== process.env.COPYAPP_RECORD_VERSION) {
+      throw new Error('Recording version must match the selected executable');
+    }
     await pc.waitForFunction(() => !document.body.classList.contains('offline'));
     if (state.pairing.open) {
       const qrResponse = await qrRequest;

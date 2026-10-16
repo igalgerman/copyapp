@@ -12,7 +12,7 @@ CopyApp window and the log, and prints the SHA-256 of the result.
 to this PC, for automated tests/recording without fresh LAN firewall prompts.
 #>
 param(
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.0.1',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.0.2',
     [switch]$Test,
     [switch]$LoopbackTest
 )

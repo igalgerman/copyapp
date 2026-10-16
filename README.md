@@ -16,7 +16,7 @@ CopyApp lets you copy and paste between your Windows PC and your Android phone.
 
 https://copyapp.igalg.chatgpt.site/
 
-or download the reviewed [CopyApp 1.0.1 executable](https://github.com/igalgerman/copyapp/releases/download/v1.0.1/copyapp.exe). The [1.0.1 release](https://github.com/igalgerman/copyapp/releases/tag/v1.0.1) includes `SHA256SUMS` to check the download.
+or download the reviewed [CopyApp 1.0.2 executable](https://github.com/igalgerman/copyapp/releases/download/v1.0.2/copyapp.exe). The [1.0.2 release](https://github.com/igalgerman/copyapp/releases/tag/v1.0.2) includes `SHA256SUMS` to check the download.
 
 ---
 
@@ -114,8 +114,8 @@ More details: [SECURITY.md](SECURITY.md).
 
 ## Videos
 
-- [Install video — 1.0.1](https://github.com/igalgerman/copyapp/releases/download/v1.0.1/install.mp4)
-- [Use video — 1.0.1](https://github.com/igalgerman/copyapp/releases/download/v1.0.1/use.mp4)
+- [Install video — 1.0.2](https://github.com/igalgerman/copyapp/releases/download/v1.0.2/install.mp4)
+- [Use video — 1.0.2](https://github.com/igalgerman/copyapp/releases/download/v1.0.2/use.mp4)
 
 The website also includes these videos.
 
@@ -126,7 +126,7 @@ The website also includes these videos.
 Requirements: Go 1.27+ on Windows (PowerShell 7 for the scripts).
 
 ```
-pwsh -File build.ps1 -Version 1.0.1 -Test   # vet + tests, then dist\copyapp.exe and dist\SHA256SUMS
+pwsh -File build.ps1 -Version 1.0.2 -Test   # vet + tests, then dist\copyapp.exe and dist\SHA256SUMS
 pwsh -File docs\e2e\run.ps1                 # builds/tests a loopback-only exe in isolated temp folders
 ```
 

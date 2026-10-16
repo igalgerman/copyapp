@@ -14,7 +14,7 @@
     en: {
       shareOptionTitle: "CopyApp in Android’s Share menu",
       shareOptionBody: "To add the Share-menu entry: on the phone open ⋯ → Install as an app, compare the certificate code with the PC, install the certificate as instructed, then choose Install app in Chrome. After installation, choose CopyApp in Android’s Share menu and confirm sending to the PC. The ordinary browser tab remains available without installation.",
-      knownTitle: "Before you download — 1.0.1",
+      knownTitle: "Before you download — 1.0.2",
       knownBody: "The Windows executable is unsigned. Pair only on a trusted network: bypassing the certificate warning does not verify the PC’s identity. Certificate menus, app installation and Share support vary by device and need checking on your phone. iPhone is unsupported; a changed PC address requires opening its new address.",
       knownTransfers: "Android downloads use Chrome’s download manager; browser permissions may block automatic actions. Files normally go to <bdi dir='ltr'>Downloads\\CopyApp</bdi>. If that location is unsafe, CopyApp uses the local <bdi dir='ltr'>%LOCALAPPDATA%\\CopyApp\\Received</bdi> folder. The PC window shows the actual destination.",
       knownLink: "Security and further limits",
@@ -73,7 +73,7 @@
     ru: {
       shareOptionTitle: "CopyApp в меню «Поделиться» Android",
       shareOptionBody: "Чтобы добавить пункт в меню «Поделиться», на телефоне откройте ⋯ → Установить как приложение, сравните код сертификата с компьютером, установите сертификат по инструкции, затем выберите «Установить приложение» в Chrome. После установки выберите CopyApp в меню «Поделиться» и подтвердите отправку на компьютер. Обычная вкладка работает без установки.",
-      knownTitle: "Перед загрузкой — 1.0.1",
+      knownTitle: "Перед загрузкой — 1.0.2",
       knownBody: "Файл Windows не подписан. Подключайте телефон только в доверенной сети: обход предупреждения сертификата не подтверждает личность компьютера. Меню сертификатов, установка приложения и поддержка «Поделиться» зависят от устройства и требуют проверки на вашем телефоне. iPhone не поддерживается; при смене адреса компьютера нужно открыть новый адрес.",
       knownTransfers: "На Android скачиванием управляет менеджер загрузок Chrome; разрешения браузера могут блокировать автоматические действия. Обычно файлы попадают в <bdi dir='ltr'>Downloads\\CopyApp</bdi>. Если папка небезопасна, используется локальная <bdi dir='ltr'>%LOCALAPPDATA%\\CopyApp\\Received</bdi>. Окно компьютера показывает фактическую папку.",
       knownLink: "Безопасность и другие ограничения",
