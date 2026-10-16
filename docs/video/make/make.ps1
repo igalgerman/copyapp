@@ -1,5 +1,5 @@
 <#
-Builds docs\video\install.mp4 and docs\video\use.mp4 by driving the REAL dist\copyapp.exe (temp APPDATA, cleanup as in docs\e2e\run.ps1).
+Builds docs\video\install.mp4 and docs\video\use.mp4 by driving the loopback-only app build (temp APPDATA, cleanup as in docs\e2e\run.ps1).
   pwsh -File docs\video\make\make.ps1 [-Only install|use|both] [-NoBuild] [-IllustrateNative] [-StartupPng <verified PNG>] [-ComposeOnly -WorkDir <recording directory>]
 Needs: ffmpeg (winget install --id Gyan.FFmpeg -e), Node, Windows fonts. Overwrites the Windows clipboard (prior text is restored at the end).
 Raw recordings go to %TEMP%\copyapp-video-<unique ID>\raw (not in git); final mp4s go to docs\video (not in git; attach them to the Release).
@@ -8,14 +8,14 @@ By default, capdlg.ps1 and caposd.ps1 capture native startup/confirmation window
 -StartupPng uses a separately verified native startup capture from the same EXE; startup is then answered automatically.
 -IllustrateNative answers startup automatically and clearly labels startup/green-confirmation illustrations;
 the use clip then demonstrates the actual PC-window Send clipboard button rather than claiming a recorded hotkey press.
-Use this explicit fallback when native capture is unavailable. Actual app pages, pairing and transfers still use the real EXE.
+Use this explicit fallback when native capture is unavailable. Actual app pages, pairing and transfers use the app with only its network binding restricted to this PC.
 Install/shortcut folders, data and received files are temporary; browser opening and real autostart writes are disabled.
 Public Wi-Fi names, usernames, IP text and displayed QR pixels are sanitized. Actual pairing decodes the real QR off-screen.
 #>
 param([ValidateSet('install','use','both')]$Only = 'both', [switch]$NoBuild, [switch]$ComposeOnly, [string]$WorkDir, [string]$StartupPng, [switch]$IllustrateNative)
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path "$PSScriptRoot\..\..\..").Path
-$exe  = Join-Path $root 'dist\copyapp.exe'
+$exe  = Join-Path $root 'output\test-bin\copyapp.exe'
 if ($StartupPng) {
     $StartupPng = (Resolve-Path -LiteralPath $StartupPng).Path
     $signature = [IO.File]::ReadAllBytes($StartupPng)
@@ -59,10 +59,11 @@ $env:NODE_PATH = "$node\node_modules"; $env:FFMPEG = $ffmpeg; $env:RAW_DIR = $ra
 $env:OUT_DIR = Join-Path $root 'docs\video'; $env:WEB_DIR = Join-Path $root 'internal\server\web'; $env:COPYAPP_EXE = $exe
 if (Get-Process copyapp -ErrorAction SilentlyContinue) { throw 'copyapp.exe is already running; quit it first' }
 if (-not $NoBuild -and -not $ComposeOnly) {
-    pwsh -NoProfile -File (Join-Path $root 'build.ps1')
+    pwsh -NoProfile -File (Join-Path $root 'build.ps1') -LoopbackTest
     if ($LASTEXITCODE) { throw 'build failed' }
 }
-if (-not $ComposeOnly -and -not (Test-Path -LiteralPath $exe)) { throw 'Release executable is missing; run build.ps1 first' }
+. (Join-Path $root 'docs\e2e\test-binary.ps1')
+if (-not $ComposeOnly) { Assert-LoopbackTestBinary $exe }
 $oldAppdata = $env:APPDATA
 $testEnv = @('COPYAPP_NO_OSD','COPYAPP_PORTABLE','COPYAPP_NO_BROWSER','COPYAPP_SKIP_PROMPTS','COPYAPP_NO_AUTOSTART_WRITE','COPYAPP_RECEIVE_DIR','COPYAPP_DATA_DIR','COPYAPP_WIFI_NAME','COPYAPP_INSTALL_DIR','COPYAPP_DESKTOP_DIR','COPYAPP_STARTMENU_DIR','COPYAPP_SENDTO_DIR','COPYAPP_APPDATA','COPYAPP_LPORT','COPYAPP_PID','CAP_DIR','COPYAPP_ILLUSTRATE_NATIVE')
 $previousEnv = @{}; foreach ($key in $testEnv) { $previousEnv[$key] = [Environment]::GetEnvironmentVariable($key) }
@@ -110,6 +111,7 @@ try {
             $expectedExe = if ($s -eq 'install') { "$work\installed\copyapp.exe" } else { $exe }
             $running = @(Get-Process copyapp -ErrorAction SilentlyContinue | Where-Object Path -eq $expectedExe)
             if ($running.Count -ne 1) { throw 'Cannot identify the isolated CopyApp process' }
+            Assert-LoopbackListeners $running[0].Id
             $env:COPYAPP_PID = [string]$running[0].Id
             Start-Sleep 2
             try { node "$PSScriptRoot\record.js" $s; if ($LASTEXITCODE) { throw "record $s failed" } }

@@ -200,7 +200,7 @@ func main() {
 		log.Printf("persist session: %v", err)
 	}
 
-	httpsLn, err := listenRemembered("port.txt", "0.0.0.0", defaultPort, true)
+	httpsLn, err := listenRemembered("port.txt", httpsBindHost, defaultPort, true)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -218,8 +218,10 @@ func main() {
 		CAPEM:   caPEM,
 		BaseURL: func() string {
 			ip := "localhost"
-			if p := pc.PrimaryIP(); p != nil {
-				ip = p.String()
+			if httpsBindHost != "127.0.0.1" {
+				if p := pc.PrimaryIP(); p != nil {
+					ip = p.String()
+				}
 			}
 			return "https://" + net.JoinHostPort(ip, strconv.Itoa(httpsPort))
 		},

@@ -1,16 +1,19 @@
 <#
-Native desktop integration checks of the final release EXE. Run after run.ps1:
-  pwsh -NoProfile -File docs/e2e/desktop.ps1 [-Exe dist/copyapp.exe] [-BaselineExe previous-release.exe] [-TimeoutSec 60]
+Native desktop integration checks using a loopback-only test build. Run after run.ps1:
+  pwsh -NoProfile -File docs/e2e/desktop.ps1 [-Exe output/test-bin/copyapp.exe] [-BaselineExe previous-loopback-test.exe] [-TimeoutSec 60]
 Requires an interactive Windows desktop and the QR decoder modules installed by run.ps1.
 All application folders and shortcuts are isolated; autostart writes and browser opening are disabled.
 #>
 param([string]$Exe, [string]$BaselineExe, [ValidateRange(10,180)][int]$TimeoutSec = 60, [string]$NodeModules)
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path "$PSScriptRoot\..\..").Path
-if (-not $Exe) { $Exe = Join-Path $root 'dist\copyapp.exe' }
+if (-not $Exe) { $Exe = Join-Path $root 'output\test-bin\copyapp.exe' }
 $Exe = (Resolve-Path -LiteralPath $Exe).Path
 if (-not $BaselineExe) { $BaselineExe = $Exe }
 $BaselineExe = (Resolve-Path -LiteralPath $BaselineExe).Path
+. "$PSScriptRoot\test-binary.ps1"
+Assert-LoopbackTestBinary $Exe
+Assert-LoopbackTestBinary $BaselineExe
 if (-not $NodeModules) { $NodeModules = Join-Path $env:TEMP 'copyapp-e2e-node\node_modules' }
 if (-not (Test-Path (Join-Path $NodeModules 'jsqr'))) { throw 'Run docs/e2e/run.ps1 first, or supply -NodeModules containing jsqr and pngjs' }
 if (Get-Process copyapp -ErrorAction SilentlyContinue) { throw 'Quit the existing CopyApp before running desktop integration checks' }
@@ -53,6 +56,7 @@ function Connect-Control {
             return $true
         } catch { return $false }
     }
+    foreach ($owned in Owned-Processes) { Assert-LoopbackListeners $owned.Id }
 }
 function Pair-Phone {
     $null = Invoke-WebRequest "$L/pairing/open" -Method POST -Headers (@{ Origin=$L; 'X-CopyApp'=$lh.'X-CopyApp' }) -TimeoutSec 5

@@ -2,6 +2,10 @@
 
 All notable changes to CopyApp. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- Automated tests and recordings use a separate loopback-only build, including installed/upgraded copies, to avoid repeated Windows Firewall prompts from temporary executable paths. Harnesses refuse production EXEs before launch and verify local-only listeners. Normal releases retain LAN access.
+
 ## [1.0.1] - 2026-10-16
 
 ### Fixed

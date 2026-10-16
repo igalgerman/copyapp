@@ -8,10 +8,13 @@ It embeds the icon, version information and the application manifest
 go-winres, builds without a console window, stamps the version shown in the
 CopyApp window and the log, and prints the SHA-256 of the result.
 -Test runs `go vet` and `go test` first.
+-LoopbackTest builds output\test-bin\copyapp.exe with network access restricted
+to this PC, for automated tests/recording without fresh LAN firewall prompts.
 #>
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.0.1',
-    [switch]$Test
+    [switch]$Test,
+    [switch]$LoopbackTest
 )
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
@@ -29,12 +32,14 @@ try {
     go run github.com/tc-hib/go-winres@v0.3.3 make --in cmd/copyapp/winres/winres.json --out cmd/copyapp/rsrc `
         --arch amd64 --product-version "$Version.0" --file-version "$Version.0"
     if ($LASTEXITCODE) { throw 'go-winres failed' }
-    New-Item -ItemType Directory -Force dist | Out-Null
-    go build -trimpath -ldflags "-H=windowsgui -s -w -X main.version=$Version" -o dist\copyapp.exe ./cmd/copyapp
+    $destination = if ($LoopbackTest) { 'output\test-bin' } else { 'dist' }
+    $buildTags = if ($LoopbackTest) { @('-tags', 'copyapp_test_loopback') } else { @() }
+    New-Item -ItemType Directory -Force $destination | Out-Null
+    go build @buildTags -trimpath -ldflags "-H=windowsgui -s -w -X main.version=$Version" -o "$destination\copyapp.exe" ./cmd/copyapp
     if ($LASTEXITCODE) { throw 'go build failed' }
-    $exe = Get-Item dist\copyapp.exe
+    $exe = Get-Item "$destination\copyapp.exe"
     $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-    "$hash  copyapp.exe" | Set-Content -Encoding ascii dist\SHA256SUMS
+    "$hash  copyapp.exe" | Set-Content -Encoding ascii "$destination\SHA256SUMS"
     Write-Host "Built $($exe.FullName) (CopyApp $Version, $($exe.Length) bytes)"
     Write-Host "SHA-256: $hash"
 }

@@ -127,10 +127,12 @@ Requirements: Go 1.27+ on Windows (PowerShell 7 for the scripts).
 
 ```
 pwsh -File build.ps1 -Version 1.0.1 -Test   # vet + tests, then dist\copyapp.exe and dist\SHA256SUMS
-pwsh -File docs\e2e\run.ps1                 # end-to-end test of the real exe (isolated temp folders)
+pwsh -File docs\e2e\run.ps1                 # builds/tests a loopback-only exe in isolated temp folders
 ```
 
 `build.ps1` embeds the icon, version information and manifest (`cmd/copyapp/winres/winres.json`, via go-winres), builds with `-H=windowsgui -s -w -X main.version=…` and prints the SHA-256. A plain `go build ./cmd/copyapp` also works (it uses the committed `rsrc_windows_amd64.syso`, version "dev").
+
+Automated integration tests and recordings use `build.ps1 -LoopbackTest`, which writes `output/test-bin/copyapp.exe` with the `copyapp_test_loopback` build tag. Both listeners stay on this PC, including after self-install/update, so temporary copies do not repeatedly request LAN firewall access. Harnesses inspect build metadata before launch and refuse release binaries (including `-BaselineExe`). This exercises app behavior locally; a physical phone/LAN check still needs the normal release build. The test build never replaces `dist/copyapp.exe` or published downloads.
 
 Changes: [CHANGELOG.md](CHANGELOG.md). License: [MIT](LICENSE).
 

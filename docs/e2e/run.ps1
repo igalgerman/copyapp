@@ -1,5 +1,5 @@
 <#
-End-to-end check of the REAL dist\copyapp.exe (PowerShell 7+, Windows, Node for QR decoding).
+End-to-end check using the loopback-only app build (PowerShell 7+, Windows, Node for QR decoding).
 
   pwsh -File docs\e2e\run.ps1 [-NoBuild]
 
@@ -10,17 +10,20 @@ Windows clipboard. Data, receive folders and shortcuts are isolated in a
 temporary test directory; prompts, browser opening and real autostart writes
 are disabled. It also checks the real global hotkey and saved PC settings.
 Refuses to run if copyapp.exe is already running.
+Builds output\test-bin\copyapp.exe; release binaries are refused before launch.
+Phone traffic stays on this PC, avoiding fresh LAN firewall prompts per test copy.
 This covers the HTTP/exe behaviour; the 390x844 PWA UI was driven separately
 with Playwright (HTTPS errors ignored, like a phone tab where the user tapped Advanced > Proceed).
 #>
 param([switch]$NoBuild, [switch]$LargeFiles, [switch]$Browser)
 $ErrorActionPreference = 'Stop'
 $root   = (Resolve-Path "$PSScriptRoot\..\..").Path
-$exe    = Join-Path $root 'dist\copyapp.exe'
+$exe    = Join-Path $root 'output\test-bin\copyapp.exe'
 $tmp    = Join-Path $env:TEMP ('copyapp-e2e-' + [guid]::NewGuid().ToString('N'))
 $appdata= Join-Path $tmp 'appdata'
 $files  = Join-Path $tmp 'files'
 $node   = Join-Path $env:TEMP 'copyapp-e2e-node'
+. "$PSScriptRoot\test-binary.ps1"
 $script:fails = 0
 function Check($name, $ok, $extra = '') {
     if ($ok) { Write-Host "PASS  $name" } else { Write-Host "FAIL  $name $extra" -ForegroundColor Red; $script:fails++ }
@@ -53,9 +56,10 @@ function Stop-TestApps {
 }
 try {
     if (-not $NoBuild) {
-        pwsh -NoProfile -File (Join-Path $root 'build.ps1')
+        pwsh -NoProfile -File (Join-Path $root 'build.ps1') -LoopbackTest
         if ($LASTEXITCODE) { throw 'build failed' }
     }
+    Assert-LoopbackTestBinary $exe
     foreach ($d in @($appdata, $files)) { $safe = Assert-TestPath $d; Remove-Item -LiteralPath $safe -Recurse -Force -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Force $appdata, $files, $node | Out-Null
     if (-not (Test-Path "$node\node_modules\pngjs")) {
@@ -82,11 +86,8 @@ try {
     for ($i = 0; $i -lt 50 -and -not ((Test-Path "$dd\port.txt") -and (Test-Path "$dd\local-port.txt")); $i++) { Start-Sleep -Milliseconds 200 }
     $port = (Get-Content "$dd\port.txt").Trim(); $lport = (Get-Content "$dd\local-port.txt").Trim()
     $L = "http://127.0.0.1:$lport"
-    $ip = ([System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() | Where-Object OperationalStatus -eq Up |
-        ForEach-Object { $_.GetIPProperties().UnicastAddresses } |
-        Where-Object { $_.Address.AddressFamily -eq 'InterNetwork' -and $_.Address.ToString() -match '^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)' } |
-        Select-Object -First 1).Address.ToString()
-    $B = "https://${ip}:$port"
+    Assert-LoopbackListeners $proc.Id
+    $B = "https://localhost:$port"
     $opt = @{ SkipCertificateCheck = $true; SkipHttpErrorCheck = $true; TimeoutSec = 10 }
     Check 'ports written' ($port -and $lport)
 
@@ -95,7 +96,7 @@ try {
     Check 'no cookie POST /send -> 401' ((Invoke-WebRequest "$B/send" -Method POST -Body '{"text":"x"}' -ContentType application/json @opt).StatusCode -eq 401)
     $r = Invoke-WebRequest "$B/favicon.ico" @opt; Check 'favicon.ico 200 image/png' ($r.StatusCode -eq 200 -and "$($r.Headers.'Content-Type')" -eq 'image/png')
     $r = Invoke-WebRequest "$B/bricolage.woff2" @opt; Check 'woff2 served as font/woff2' ("$($r.Headers.'Content-Type')" -eq 'font/woff2')
-    Check 'pairing page is not reachable from the LAN address' ((Invoke-WebRequest "$B/pairing" @opt).StatusCode -eq 403)
+    Check 'pairing page rejects a non-local Host' ((Invoke-WebRequest "$B/pairing" -Headers @{ Host = "192.0.2.1:$port" } @opt).StatusCode -eq 403)
     Check '/ca.crt available while pairing is open' ((Invoke-WebRequest "$B/ca.crt" @opt).StatusCode -eq 200)
 
     $ps = Invoke-RestMethod "$L/pairing/status" -Headers @{ 'X-CopyApp' = (Get-Content "$dd\local.key").Trim() }
@@ -306,6 +307,7 @@ try {
     Start-Sleep 1
     $running = Get-Process copyapp -ErrorAction SilentlyContinue
     Check 'exactly one copy runs, the installed one' (@($running).Count -eq 1 -and $running.Path -eq $inst) "$($running.Path)"
+    Assert-LoopbackListeners $running.Id
     $lh2 = @{ 'X-CopyApp' = (Get-Content "$dd2\local.key").Trim() }; $L2 = "http://127.0.0.1:$((Get-Content "$dd2\local-port.txt").Trim())"
     $st2 = Invoke-RestMethod "$L2/local/state" -Headers $lh2
     Check 'first run: startup answered, pairing window open' ((Get-Content "$dd2\settings.json" -Raw | ConvertFrom-Json).autostartAsked -and $st2.autostart -and $st2.pairing.open)
