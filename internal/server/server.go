@@ -82,9 +82,8 @@ type Config struct {
 	Logf func(format string, args ...any)
 	// LocalSecret authorizes the PC-only routes. Loopback is shared by every
 	// Windows user on the machine, so peer address alone is not enough: a
-	// request must carry it in the X-CopyApp header, or a browser session
-	// cookie (LocalCookieName: a random in-memory token, issued once
-	// /pairing?k=SECRET was opened). Empty denies those routes.
+	// request must carry it in X-CopyApp, or an in-memory browser token in
+	// X-CopyApp-Session, issued when /pairing?k=SECRET was opened.
 	LocalSecret string
 	// WiFiName returns the SSID this PC is connected to ("" if unknown or
 	// wired); the pairing page names it so the phone joins the same network.
@@ -109,7 +108,7 @@ type Config struct {
 	OnPaired func(ip string)
 }
 
-// LocalCookieName holds the control window's browser session token.
+// LocalCookieName is the legacy cookie name. Cookies no longer authorize control routes.
 const LocalCookieName = "copyapp_local"
 
 type client struct {
@@ -143,7 +142,7 @@ type Server struct {
 	uploads   atomic.Int32
 
 	localMu       sync.Mutex
-	localSessions map[string]time.Time // control-window cookie tokens -> last use
+	localSessions map[string]time.Time // explicit control-window tokens -> last use
 
 	wifiMu   sync.Mutex
 	wifi     string
@@ -176,7 +175,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("GET /events", s.requireAuth(s.events))
 	mux.HandleFunc("GET /item/{id}", s.requireAuth(s.item))
 	mux.HandleFunc("POST /unpair", sameSite(s.requireAuth(s.unpair)))
-	mux.HandleFunc("GET /pairing", s.localOnly(s.pairingPage))
+	mux.HandleFunc("GET /pairing", s.localPage)
 	mux.HandleFunc("GET /pairing/status", s.localOnly(s.pairingStatus))
 	mux.HandleFunc("POST /pairing/open", s.localOnly(s.pairingOpen))
 	mux.HandleFunc("GET /qr", s.localOnly(s.qr))
@@ -224,12 +223,14 @@ func (s *Server) Publish(it store.Item) (string, error) {
 	if size > s.cfg.Settings.Get().MaxBytes {
 		return "", store.ErrTooLarge
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	id, err := s.cfg.Store.Add(it)
 	if err != nil {
 		return "", err
 	}
 	if it, ok := s.cfg.Store.Get(id); ok {
-		s.Broadcast(it)
+		s.broadcastLocked(it)
 	}
 	return id, nil
 }
@@ -237,9 +238,13 @@ func (s *Server) Publish(it store.Item) (string, error) {
 // Broadcast pushes an item (already in the store) to all SSE clients. Slow
 // clients are disconnected; they reconnect and receive the full list.
 func (s *Server) Broadcast(it store.Item) {
-	msg := sseMessage(it)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.broadcastLocked(it)
+}
+
+func (s *Server) broadcastLocked(it store.Item) {
+	msg := sseMessage(it)
 	for c := range s.clients {
 		select {
 		case c.ch <- msg:
@@ -252,15 +257,17 @@ func (s *Server) Broadcast(it store.Item) {
 
 // Unpair drops the session and pairing token and closes all event streams
 // (tray "Re-pair").
-func (s *Server) Unpair() {
-	s.cfg.Auth.Revoke()
+func (s *Server) Unpair() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	err := s.cfg.Auth.Revoke()
+	s.cfg.Store.Clear()
 	s.pairToken, s.pairedFrom = "", ""
 	for c := range s.clients {
 		close(c.quit)
 		delete(s.clients, c)
 	}
+	return err
 }
 
 // ---------- middleware ----------
@@ -398,10 +405,8 @@ func LocalAuthorized(r *http.Request, key string) bool {
 // localTTL is the sliding lifetime of a control-window browser session.
 const localTTL = 12 * time.Hour
 
-// newLocalSession issues a random token for the control window's cookie.
-// The long-lived local key itself never goes into a cookie: 127.0.0.1 cookies
-// are sent to every port, so another local program could otherwise collect
-// it. Tokens live in memory only (a restart logs every browser out).
+// newLocalSession issues a browser token for origin-scoped sessionStorage.
+// Cookies cannot be used: all ports on 127.0.0.1 receive the same cookies.
 func (s *Server) newLocalSession() string {
 	var b [32]byte
 	rand.Read(b[:])
@@ -426,14 +431,14 @@ func (s *Server) newLocalSession() string {
 
 // localSessionValid checks and extends a control-window session.
 func (s *Server) localSessionValid(r *http.Request) bool {
-	c, err := r.Cookie(LocalCookieName)
-	if err != nil || c.Value == "" {
+	token := r.Header.Get("X-CopyApp-Session")
+	if token == "" {
 		return false
 	}
 	s.localMu.Lock()
 	defer s.localMu.Unlock()
 	for tok, seen := range s.localSessions {
-		if secret.Equal(c.Value, tok) {
+		if secret.Equal(token, tok) {
 			if time.Since(seen) > localTTL {
 				delete(s.localSessions, tok)
 				return false
@@ -446,27 +451,12 @@ func (s *Server) localSessionValid(r *http.Request) bool {
 }
 
 // localOnly allows only loopback peers that address us as localhost (the
-// Host check blocks DNS-rebinding pages) and hold the local secret (blocks
-// other users of this PC). GET /pairing?k=SECRET trades the secret for the
-// cookie.
+// Host check blocks DNS-rebinding pages) and explicitly send credentials.
 func (s *Server) localOnly(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		a, ok := remoteAddr(r)
 		if !ok || !a.IsLoopback() || !isLocalHost(r.Host) {
 			jsonError(w, http.StatusForbidden, "forbidden", "only available on this PC")
-			return
-		}
-		if k := r.URL.Query().Get("k"); k != "" && r.Method == http.MethodGet && r.URL.Path == "/pairing" {
-			if !secret.Equal(k, s.cfg.LocalSecret) {
-				jsonError(w, http.StatusForbidden, "forbidden", "open this page from the CopyApp tray menu")
-				return
-			}
-			http.SetCookie(w, &http.Cookie{
-				Name: LocalCookieName, Value: s.newLocalSession(), Path: "/",
-				HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode,
-			})
-			w.Header().Set("Cache-Control", "no-store")
-			http.Redirect(w, r, "/pairing", http.StatusSeeOther) // drop the key from the address bar
 			return
 		}
 		if s.cfg.LocalSecret == "" || !s.localSessionValid(r) && !LocalAuthorized(r, s.cfg.LocalSecret) {
@@ -557,8 +547,17 @@ func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodHead { // link previews must not burn the token
 		return
 	}
-	sid, ok := s.cfg.Auth.Exchange(r.URL.Query().Get("t"))
+	s.mu.Lock()
+	wasPaired := s.cfg.Auth.Paired()
+	sid, ok, err := s.cfg.Auth.ExchangeWithError(r.URL.Query().Get("t"))
+	if err != nil {
+		s.mu.Unlock()
+		s.cfg.Logf("pair: could not persist session: %v", err)
+		jsonError(w, http.StatusInternalServerError, "session_save", "could not save pairing; open a new QR code and try again")
+		return
+	}
 	if !ok {
+		s.mu.Unlock()
 		s.cfg.Logf("pair: rejected token from %s", r.RemoteAddr)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -569,7 +568,13 @@ func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
 	if a, ok := remoteAddr(r); ok {
 		ip = a.String()
 	}
-	s.mu.Lock()
+	if wasPaired {
+		s.cfg.Store.Clear()
+		for c := range s.clients {
+			close(c.quit)
+			delete(s.clients, c)
+		}
+	}
 	s.pairToken = ""
 	s.pairedAt = time.Now()
 	s.pairedFrom = ip
@@ -609,8 +614,13 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) unpair(w http.ResponseWriter, r *http.Request) {
-	s.Unpair()
+	err := s.Unpair()
 	http.SetCookie(w, s.cookie("", -1))
+	if err != nil {
+		s.cfg.Logf("unpair: could not persist revocation: %v", err)
+		jsonError(w, http.StatusInternalServerError, "session_save", "unpaired for this run, but could not save revocation; the old phone may regain access after restart")
+		return
+	}
 	s.cfg.Clip.Notify("CopyApp", i18n.T("toast.unpaired"))
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -640,6 +650,11 @@ func sseMessage(it store.Item) []byte {
 
 func (s *Server) subscribe() *client {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.subscribeLocked()
+}
+
+func (s *Server) subscribeLocked() *client {
 	s.clientSeq++
 	c := &client{ch: make(chan []byte, 16), quit: make(chan struct{}), seq: s.clientSeq}
 	for len(s.clients) >= maxClients {
@@ -653,7 +668,6 @@ func (s *Server) subscribe() *client {
 		delete(s.clients, oldest)
 	}
 	s.clients[c] = struct{}{}
-	s.mu.Unlock()
 	return c
 }
 
@@ -677,11 +691,19 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Accel-Buffering", "no")
 
-	c := s.subscribe() // before listing, so nothing published in between is lost
+	s.mu.Lock()
+	// A request may have passed requireAuth before Unpair revoked its session.
+	if !s.authed(r) {
+		s.mu.Unlock()
+		jsonError(w, http.StatusUnauthorized, "unauthorized", "not paired")
+		return
+	}
+	c := s.subscribeLocked() // before listing, so nothing published in between is lost
+	items := s.cfg.Store.List()
+	s.mu.Unlock()
 	defer s.unsubscribe(c)
 	w.WriteHeader(http.StatusOK)
 	io.WriteString(w, "retry: 3000\n\n")
-	items := s.cfg.Store.List()
 	for i := len(items) - 1; i >= 0; i-- { // oldest first
 		w.Write(sseMessage(items[i]))
 	}

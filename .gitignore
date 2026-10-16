@@ -7,6 +7,7 @@ docs/video/make/tmp/
 .playwright-cli/
 .playwright-mcp/
 output/
+/debug.log
 landing/
 landing-deploy.tar.gz
 copyapp-website.zip

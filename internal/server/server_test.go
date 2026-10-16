@@ -792,7 +792,7 @@ func TestMinSec(t *testing.T) {
 // local is a request from this PC's own pairing page (holding the local cookie).
 func local(e *env, method, target string) *http.Request {
 	r := bareLocal(e, method, target)
-	r.AddCookie(&http.Cookie{Name: LocalCookieName, Value: e.s.newLocalSession()})
+	r.Header.Set("X-CopyApp-Session", e.s.newLocalSession())
 	return r
 }
 
@@ -811,7 +811,7 @@ func bareLocal(e *env, method, target string) *http.Request {
 func TestLocalRoutesNeedSecret(t *testing.T) {
 	e := newEnv(t, 0)
 	e.s.StartPairing()
-	routes := [][2]string{{"GET", "/qr"}, {"GET", "/pairing"}, {"GET", "/pairing/status"}, {"POST", "/pairing/open"}}
+	routes := [][2]string{{"GET", "/qr"}, {"GET", "/pairing/status"}, {"POST", "/pairing/open"}}
 	for _, rt := range routes {
 		if w := e.do(bareLocal(e, rt[0], rt[1])); w.Code != http.StatusForbidden {
 			t.Errorf("%s without secret: %d", rt[1], w.Code)
@@ -829,50 +829,6 @@ func TestLocalRoutesNeedSecret(t *testing.T) {
 		if w := e.do(local(e, rt[0], rt[1])); w.Code == http.StatusForbidden {
 			t.Errorf("%s with cookie: %d", rt[1], w.Code)
 		}
-	}
-}
-
-func TestPairingKeySetsLocalCookie(t *testing.T) {
-	e := newEnv(t, 0)
-	w := e.do(bareLocal(e, "GET", "/pairing?k=nope"))
-	if w.Code != http.StatusForbidden || len(w.Result().Cookies()) != 0 {
-		t.Fatalf("wrong key: %d %v", w.Code, w.Result().Cookies())
-	}
-	w = e.do(bareLocal(e, "GET", "/pairing?k="+testLocalKey))
-	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/pairing" {
-		t.Fatalf("key exchange: %d %q", w.Code, w.Header().Get("Location"))
-	}
-	var c *http.Cookie
-	for _, x := range w.Result().Cookies() {
-		if x.Name == LocalCookieName {
-			c = x
-		}
-	}
-	if c == nil || c.Value == "" || strings.Contains(c.Value, testLocalKey) || !c.HttpOnly || c.SameSite != http.SameSiteStrictMode || c.Path != "/" {
-		t.Fatalf("local cookie: %+v", c)
-	}
-	// The cookie is a separate browser session, not the local key.
-	r0 := bareLocal(e, "GET", "/pairing/status")
-	r0.AddCookie(c)
-	if w := e.do(r0); w.Code != 200 {
-		t.Fatalf("session cookie refused: %d", w.Code)
-	}
-	r0 = bareLocal(e, "GET", "/pairing/status")
-	r0.AddCookie(&http.Cookie{Name: LocalCookieName, Value: testLocalKey})
-	if w := e.do(r0); w.Code != http.StatusForbidden {
-		t.Fatalf("raw key accepted as cookie: %d", w.Code)
-	}
-	// A restart (new server) forgets browser sessions.
-	e2 := newEnv(t, 0)
-	r0 = bareLocal(e2, "GET", "/pairing/status")
-	r0.AddCookie(c)
-	if w := e2.do(r0); w.Code != http.StatusForbidden {
-		t.Fatalf("old session survived restart: %d", w.Code)
-	}
-	// The same key from the LAN is useless.
-	r := e.req("GET", "/pairing?k="+testLocalKey, nil)
-	if w := e.do(r); w.Code != http.StatusForbidden {
-		t.Fatalf("LAN with key: %d", w.Code)
 	}
 }
 
@@ -914,7 +870,7 @@ func TestQRAndPairingPageLocalOnly(t *testing.T) {
 	}
 	w = e.do(local(e, "GET", "/pairing"))
 	body := w.Body.String()
-	if w.Code != 200 || !strings.Contains(body, `src="/qr`) || !strings.Contains(w.Header().Get("Content-Security-Policy"), "nonce-") {
+	if w.Code != 200 || !strings.Contains(body, `controlFetch('/qr'`) || !strings.Contains(w.Header().Get("Content-Security-Policy"), "nonce-") {
 		t.Fatalf("pairing page: %d", w.Code)
 	}
 	w = e.do(local(e, "GET", "/pairing/status"))

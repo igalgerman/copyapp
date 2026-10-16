@@ -2,6 +2,22 @@
 
 All notable changes to CopyApp. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.0.1] - 2026-10-16
+
+### Fixed
+- PC control sessions use an explicit request header with an origin-scoped browser token in `sessionStorage`. Cookies shared between localhost ports no longer authorize control requests; reloading the control window retains its session.
+- Unpairing clears the pending PC outbox. Replacing an existing phone also clears old pending items and closes the previous phone's event streams.
+- The phone reports a failed disconnect when the PC is unreachable or rejects the request, instead of falsely reporting success.
+- Revocation is saved before removing the old session, so Windows file locks cannot restore an unpaired phone after restart. Pairing persistence failures issue no cookie; unpair persistence failures display explicit retry guidance.
+- Receive-folder checks resolve existing junctions, symbolic links, mapped drives and short paths before applying the local/system/Startup restrictions. Unsafe saved destinations fall back to the safe default.
+- If Downloads is redirected to an unsafe destination, received files default to `%LOCALAPPDATA%\CopyApp\Received`; startup refuses to continue if neither default is safe.
+- Uninstall and graceful upgrade wait for background shortcut setup to finish, preventing shortcuts from being recreated after removal.
+
+### Release and validation
+- Product downloads and videos refer to the same versioned `v1.0.1` GitHub release assets. CI preserves assets in an already-published release and keeps its own build as a workflow artifact.
+- Added browser integration coverage for real control authorization/reload, QR pairing, translations/layout, destination settings, clipboard round trips, file upload/download, size rejection and disconnect failures.
+- Device-specific Android certificate installation, PWA installation and Share-menu behavior still require testing on the target phone. A normal Chrome tab remains available without installing the certificate or app.
+
 ## [1.0.0] - 2026-10-16
 
 First public release.

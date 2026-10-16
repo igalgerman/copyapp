@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/igalgerman/copyapp/internal/i18n"
+	"github.com/igalgerman/copyapp/internal/secret"
 	"github.com/igalgerman/copyapp/internal/settings"
 	"github.com/igalgerman/copyapp/internal/tlsutil"
 	qrcode "github.com/skip2/go-qrcode"
@@ -99,14 +100,36 @@ func pageDict() map[string]map[string]string {
 
 // pairingPage is the PC control window: status, pairing QR, active
 // transfers and settings. (The path stays /pairing for old shortcuts.)
-func (s *Server) pairingPage(w http.ResponseWriter, r *http.Request) {
+func (s *Server) localPage(w http.ResponseWriter, r *http.Request) {
+	a, ok := remoteAddr(r)
+	if !ok || !a.IsLoopback() || !isLocalHost(r.Host) {
+		jsonError(w, http.StatusForbidden, "forbidden", "only available on this PC")
+		return
+	}
+	token := ""
+	authorized := s.cfg.LocalSecret != "" && (LocalAuthorized(r, s.cfg.LocalSecret) || s.localSessionValid(r))
+	if k := r.URL.Query().Get("k"); k != "" {
+		if !secret.Equal(k, s.cfg.LocalSecret) || s.cfg.LocalSecret == "" {
+			jsonError(w, http.StatusForbidden, "forbidden", "open this page from the CopyApp tray menu")
+			return
+		}
+		token, authorized = s.newLocalSession(), true
+	}
+	s.renderPairingPage(w, r, token, authorized)
+}
+
+func (s *Server) renderPairingPage(w http.ResponseWriter, r *http.Request, token string, authorized bool) {
 	nonce := randomNonce()
 	h := w.Header()
-	h.Set("Content-Security-Policy", "default-src 'none'; img-src 'self'; connect-src 'self'; "+
+	h.Set("Content-Security-Policy", "default-src 'none'; img-src 'self' blob:; connect-src 'self'; "+
 		"style-src 'nonce-"+nonce+"'; script-src 'nonce-"+nonce+"'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
-	snap := s.snapshot()
+	// Refreshes load a generic shell. Only explicit credentials may expose PC data.
+	snap := localState{Settings: settings.Defaults(""), Hotkey: "Ctrl+Alt+C"}
+	if authorized {
+		snap = s.snapshot()
+	}
 	st := snap.Pairing
 	lang := snap.Settings.Language
 	dict := pageDict()
@@ -142,8 +165,9 @@ func (s *Server) pairingPage(w http.ResponseWriter, r *http.Request) {
 		"Snap":        snap,
 		"Folder":      snap.Settings.ReceiveMode == settings.ModeFolder,
 		"Sizes":       sizes,
-		"Fingerprint": fingerprint(s.cfg.CAPEM),
-		"Short":       tlsutil.ShortFingerprint(s.cfg.CAPEM),
+		"Fingerprint": snap.Fingerprint,
+		"Short":       snap.ShortFingerprint,
+		"LocalToken":  token,
 		"Stamp":       time.Now().UnixNano(),
 		"Lang":        lang,
 		"Dir":         i18n.Dir(lang),
@@ -321,7 +345,7 @@ footer bdi{font-family:Consolas,monospace;overflow-wrap:anywhere}
   </ul>
  </section>
  <section class="qrbox" aria-live="polite">
-  <div class="qr"><img id="qrimg" src="/qr?{{.Stamp}}" alt="{{index .S "pair.qrAlt"}}" data-k-alt="pair.qrAlt" width="256" height="256"></div>
+  <div class="qr"><img id="qrimg" alt="{{index .S "pair.qrAlt"}}" data-k-alt="pair.qrAlt" width="256" height="256"></div>
   <div class="timer" id="timer">{{index .S "pair.expires"}}</div>
   <div class="state" id="expired"><div class="big warn">&#8635;</div><div><b data-k="pair.expired">{{index .S "pair.expired"}}</b></div>
    <button id="again" type="button" data-k="pair.again">{{index .S "pair.again"}}</button></div>
@@ -344,9 +368,9 @@ footer bdi{font-family:Consolas,monospace;overflow-wrap:anywhere}
   <details id="careful">
    <summary data-k="pair.carefulSum">{{index .S "pair.carefulSum"}}</summary>
    <div class="fplabel" data-k="pair.fpLabel">{{index .S "pair.fpLabel"}}</div>
-   <div class="fpshort"><bdi dir="ltr">{{.Short}}</bdi></div>
+   <div class="fpshort"><bdi dir="ltr" id="shortFP">{{.Short}}</bdi></div>
    <p class="note" data-k="pair.fpNote">{{index .S "pair.fpNote"}}</p>
-   <div class="fp"><span data-k="pair.fpFull">{{index .S "pair.fpFull"}}</span><br><bdi dir="ltr">{{.Fingerprint}}</bdi></div>
+   <div class="fp"><span data-k="pair.fpFull">{{index .S "pair.fpFull"}}</span><br><bdi dir="ltr" id="fullFP">{{.Fingerprint}}</bdi></div>
   </details>
   <details id="optional">
    <summary data-k="pair.optSum">{{index .S "pair.optSum"}}</summary>
@@ -393,6 +417,12 @@ footer bdi{font-family:Consolas,monospace;overflow-wrap:anywhere}
 <script type="application/json" id="strings" nonce="{{.Nonce}}">{{.Dict}}</script>
 <script nonce="{{.Nonce}}">
 (function(){
+ var token={{.LocalToken}};
+ try{if(token) sessionStorage.setItem('copyapp.localSession',token); else token=sessionStorage.getItem('copyapp.localSession')||''}catch(e){}
+ if(location.search) history.replaceState(null,'','/pairing');
+ function controlFetch(url,opts){opts=opts||{};opts.headers=Object.assign({},opts.headers,{'X-CopyApp-Session':token});return fetch(url,opts)}
+ var qrURL='';
+ function loadQR(){return controlFetch('/qr',{cache:'no-store'}).then(function(r){if(!r.ok) return;return r.blob()}).then(function(blob){if(!blob)return;if(qrURL)URL.revokeObjectURL(qrURL);qrURL=URL.createObjectURL(blob);document.getElementById('qrimg').src=qrURL})}
  var b=document.body, root=document.documentElement, secs={{.State.SecondsLeft}}, wasOpen={{.State.Open}};
  var dict=JSON.parse(document.getElementById('strings').textContent), lang=root.lang, busy=0, last=null, autoOpened=false;
  function $(id){return document.getElementById(id)}
@@ -436,24 +466,25 @@ footer bdi{font-family:Consolas,monospace;overflow-wrap:anywhere}
  }
  function post(url,body){
   busy++;
-  return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})})
-   .then(function(r){if(!r.ok) throw r; return r.status===200?r.json():null})
+  return controlFetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})})
+   .then(function(r){if(!r.ok) return r.json().catch(function(){return {}}).then(function(j){throw {status:r.status,code:j.code}}); return r.status===200?r.json():null})
    .finally(function(){busy--});
  }
  var msgT=0;
  function say(k,bad){var m=$('msg'); m.textContent=get(k); m.className=bad?'bad':''; clearTimeout(msgT); msgT=setTimeout(function(){m.textContent=''},bad?8000:4000)}
- function failed(e){say(e&&e.status===400?'home.badFolder':'home.saveFail',true); poll1()}
+ function failed(e){if(e&&e.code==='session_save'){alert(get('home.revocationFail'));poll1();return}say(e&&e.status===400?'home.badFolder':'home.saveFail',true); poll1()}
  function setLang(l){apply(l); post('/local/settings',{language:l}).then(render).catch(failed)}
  function render(s){
 
   if(!s.pairing) return;
   last=s;
+  $('shortFP').textContent=s.shortFingerprint||''; $('fullFP').textContent=s.fingerprint||'';
   var p=s.pairing;
   b.classList.toggle('paired',p.paired); b.classList.toggle('expired',!p.paired&&!p.open);
-  if(p.open&&!wasOpen) $('qrimg').src='/qr?'+Date.now();
+  if(p.open&&!wasOpen) loadQR();
   // No phone yet and the code ran out (e.g. CopyApp started with Windows):
   // show a fresh code instead of asking for a click.
-  if(!autoOpened&&!p.open&&!p.paired&&!s.phone.paired){autoOpened=true; fetch('/pairing/open',{method:'POST'}).then(function(){$('qrimg').src='/qr?'+Date.now(); wasOpen=true; poll1()}).catch(function(){})}
+  if(!autoOpened&&!p.open&&!p.paired&&!s.phone.paired){autoOpened=true; controlFetch('/pairing/open',{method:'POST'}).then(function(){loadQR(); wasOpen=true; poll1()}).catch(function(){})}
   wasOpen=p.open; secs=Math.max(0,p.secondsLeft|0);
   var left=$('left'); if(left) left.textContent=ms(secs);
   $('phoneDot').classList.toggle('on',s.phone.paired&&s.phone.connected);
@@ -486,7 +517,7 @@ footer bdi{font-family:Consolas,monospace;overflow-wrap:anywhere}
   list.replaceChildren.apply(list,items);
  }
  function poll(){
-  fetch('/local/state',{cache:'no-store'}).then(function(r){if(!r.ok) throw r; return r.json()}).then(function(s){
+  controlFetch('/local/state',{cache:'no-store'}).then(function(r){if(!r.ok) throw r; return r.json()}).then(function(s){
    b.classList.remove('offline'); render(s); setTimeout(poll,1000);
   }).catch(function(e){
    // 403: CopyApp restarted and forgot this window's session; anything else: not running.
@@ -503,13 +534,14 @@ footer bdi{font-family:Consolas,monospace;overflow-wrap:anywhere}
  $('openDir').addEventListener('click',function(){post('/local/open-folder').catch(function(){})});
  $('sendNow').addEventListener('click',function(){var btn=this; btn.disabled=true;
   post('/local/send-clipboard').then(function(r){var k='home.res.'+((r&&r.result)||'failed'); say(k,k!=='home.res.sent')}).catch(function(){say('home.res.failed',true)}).finally(function(){btn.disabled=false})});
- $('repair').addEventListener('click',function(){if(!confirm(get('home.repairConfirm'))) return; post('/local/repair').then(function(){$('qrimg').src='/qr?'+Date.now(); wasOpen=true}).catch(function(){})});
+ $('repair').addEventListener('click',function(){if(!confirm(get('home.repairConfirm'))) return; post('/local/repair').then(function(){loadQR(); wasOpen=true}).catch(failed)});
  $('uninstall').addEventListener('click',function(){post('/local/uninstall').then(function(){$('unNote').classList.add('show')}).catch(function(){})});
  $('again').addEventListener('click',function(){
-  fetch('/pairing/open',{method:'POST'}).then(function(){$('qrimg').src='/qr?'+Date.now(); wasOpen=true; poll1()});
+  controlFetch('/pairing/open',{method:'POST'}).then(function(){loadQR(); wasOpen=true; poll1()});
  });
- function poll1(){fetch('/local/state',{cache:'no-store'}).then(function(r){return r.json()}).then(render).catch(function(){})}
+ function poll1(){controlFetch('/local/state',{cache:'no-store'}).then(function(r){return r.json()}).then(render).catch(function(){})}
  apply(lang);
+ loadQR();
  poll();
 })();
 </script>

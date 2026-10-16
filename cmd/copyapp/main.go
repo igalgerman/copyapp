@@ -51,21 +51,22 @@ const (
 var version = "dev"
 
 var (
-	quietStart   bool // started by Windows at sign-in (--autostart)
-	setupLinks   bool // just installed by the downloaded exe (--setup): create the shortcuts
-	dataDir      string
-	srv          *server.Server
-	sess         *auth.Auth
-	machine      *pc.PC
-	firstRun     bool
-	localKey     string // per-launch secret for the loopback routes (see secret.LocalKeyFile)
-	prefs        *settings.Store
-	activeHotkey atomic.Value
-	trayReady    atomic.Bool
-	flashMu      sync.Mutex
-	refreshTray  = make(chan struct{}, 1)
-	sendMu       sync.Mutex
-	openOnLaunch bool
+	quietStart    bool // started by Windows at sign-in (--autostart)
+	setupLinks    bool // just installed by the downloaded exe (--setup): create the shortcuts
+	dataDir       string
+	srv           *server.Server
+	sess          *auth.Auth
+	machine       *pc.PC
+	firstRun      bool
+	localKey      string // per-launch secret for the loopback routes (see secret.LocalKeyFile)
+	prefs         *settings.Store
+	activeHotkey  atomic.Value
+	trayReady     atomic.Bool
+	flashMu       sync.Mutex
+	refreshTray   = make(chan struct{}, 1)
+	sendMu        sync.Mutex
+	openOnLaunch  bool
+	shortcutSetup sync.WaitGroup // the --setup helper must finish before exit or shortcut removal
 )
 
 func main() {
@@ -87,11 +88,11 @@ func main() {
 	}
 
 	i18n.Load(dataDir)
+	settings.ExtraDenied = pc.AutorunFolders()
 	receiveDir := pc.ReceivedDir()
 	if d := os.Getenv("COPYAPP_RECEIVE_DIR"); d != "" {
 		receiveDir = d
 	}
-	settings.ExtraDenied = pc.AutorunFolders()
 	var err error
 	prefs, err = settings.Load(dataDir, receiveDir)
 	if err != nil {
@@ -164,7 +165,12 @@ func main() {
 	}
 
 	if setupLinks {
+		shortcutSetup.Add(1)
+		// Keep startup responsive, but retain the singleton until the helper
+		// finishes so an upgrade cannot overlap an older shortcut writer.
+		defer shortcutSetup.Wait()
 		go func() {
+			defer shortcutSetup.Done()
 			if err := install.CreateShortcuts(install.Default()); err != nil {
 				log.Printf("shortcuts: %v", err)
 			} else {
@@ -630,7 +636,11 @@ func onReady() {
 					mAuto.Uncheck()
 				}
 			case <-mRepair.ClickedCh:
-				srv.Unpair()
+				if err := srv.Unpair(); err != nil {
+					log.Printf("unpair: could not save revocation: %v", err)
+					pc.Info("CopyApp", i18n.T("home.revocationFail"), i18n.Lang() == "he")
+					continue
+				}
 				startPairing()
 			case <-mQuit.ClickedCh:
 				systray.Quit()
@@ -704,6 +714,9 @@ func uninstallApp() {
 		log.Printf("uninstall startup: %v", err)
 		return
 	}
+	// --setup creates shortcuts asynchronously. Removing them before its
+	// child process exits can recreate shortcuts after a successful uninstall.
+	shortcutSetup.Wait()
 	if err := install.RemoveShortcuts(paths); err != nil {
 		log.Printf("uninstall shortcuts: %v", err)
 		return

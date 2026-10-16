@@ -13,7 +13,7 @@ Refuses to run if copyapp.exe is already running.
 This covers the HTTP/exe behaviour; the 390x844 PWA UI was driven separately
 with Playwright (HTTPS errors ignored, like a phone tab where the user tapped Advanced > Proceed).
 #>
-param([switch]$NoBuild)
+param([switch]$NoBuild, [switch]$LargeFiles, [switch]$Browser)
 $ErrorActionPreference = 'Stop'
 $root   = (Resolve-Path "$PSScriptRoot\..\..").Path
 $exe    = Join-Path $root 'dist\copyapp.exe'
@@ -37,12 +37,26 @@ $oldAppdata = $env:APPDATA
 $testEnv = @('COPYAPP_NO_OSD','COPYAPP_PORTABLE','COPYAPP_NO_BROWSER','COPYAPP_SKIP_PROMPTS','COPYAPP_NO_AUTOSTART_WRITE','COPYAPP_RECEIVE_DIR','COPYAPP_DATA_DIR','COPYAPP_WIFI_NAME','COPYAPP_INSTALL_DIR','COPYAPP_DESKTOP_DIR','COPYAPP_STARTMENU_DIR','COPYAPP_SENDTO_DIR')
 $previousEnv = @{}; foreach ($key in $testEnv) { $previousEnv[$key] = [Environment]::GetEnvironmentVariable($key) }
 $proc = $null
+function Assert-TestPath([string]$path) {
+    $full = [IO.Path]::GetFullPath($path)
+    $base = [IO.Path]::GetFullPath($tmp).TrimEnd('\')
+    if ($full -ne $base -and -not $full.StartsWith($base + '\', [StringComparison]::OrdinalIgnoreCase)) { throw "Unsafe e2e path: $full" }
+    return $full
+}
+function Stop-TestApps {
+    foreach ($p in @(Get-Process copyapp -ErrorAction SilentlyContinue)) {
+        $path = $null; try { $path = $p.Path } catch {}
+        if ($path -and ($path -eq $exe -or $path.StartsWith($tmp.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase))) {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
 try {
     if (-not $NoBuild) {
         pwsh -NoProfile -File (Join-Path $root 'build.ps1')
         if ($LASTEXITCODE) { throw 'build failed' }
     }
-    Remove-Item $appdata, $files -Recurse -Force -ErrorAction SilentlyContinue
+    foreach ($d in @($appdata, $files)) { $safe = Assert-TestPath $d; Remove-Item -LiteralPath $safe -Recurse -Force -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Force $appdata, $files, $node | Out-Null
     if (-not (Test-Path "$node\node_modules\pngjs")) {
         '{}' | Set-Content "$node\package.json"
@@ -205,10 +219,11 @@ try {
     powershell.exe -NoProfile -STA -Command 'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Clipboard]::Clear()'
     $r = Invoke-RestMethod "$L/local/send-clipboard" -Method POST -Headers $lh
     Check 'empty PC clipboard -> "empty"' ($r.result -eq 'empty') "$($r.result)"
-    Check 'control state reports version 1.0.0 and the pairing address' ($pcState.version -eq '1.0.0' -and $pcState.phone.pairedFrom) "$($pcState.version) $($pcState.phone.pairedFrom)"
+    $expectedVersion = (Get-Item -LiteralPath $exe).VersionInfo.ProductVersion -replace '\.0$', ''
+    Check 'control state reports built version and the pairing address' ($pcState.version -eq $expectedVersion -and $pcState.phone.pairedFrom) "$($pcState.version)"
 
     # loopback-only endpoints: 403 without the local key, 200 with it (header or cookie)
-    foreach ($u in '/pairing', '/pairing/status') {
+    foreach ($u in '/pairing/status') {
         Check "local $u without key -> 403" ((Invoke-WebRequest "$L$u" @opt).StatusCode -eq 403)
         Check "local $u wrong key -> 403" ((Invoke-WebRequest "$L$u" -Headers @{ 'X-CopyApp' = 'nope' } @opt).StatusCode -eq 403)
         Check "local $u with X-CopyApp -> 200" ((Invoke-WebRequest "$L$u" -Headers $lh @opt).StatusCode -eq 200)
@@ -217,18 +232,41 @@ try {
     Check 'pairing?k=wrong -> 403' ((Invoke-WebRequest "$L/pairing?k=nope" -MaximumRedirection 0 @opt).StatusCode -eq 403)
     $r = Invoke-WebRequest "$L/pairing?k=$($lh.'X-CopyApp')" -SessionVariable ls @opt
     $lc = $ls.Cookies.GetAllCookies() | Where-Object Name -eq 'copyapp_local'
-    Check 'pairing?k=KEY sets copyapp_local cookie, redirects to /pairing' ($r.StatusCode -eq 200 -and $lc -and $lc.HttpOnly -and $r.BaseResponse.RequestMessage.RequestUri.AbsolutePath -eq '/pairing')
-    Check 'local cookie is a session token, not the local key' ($lc.Value -and $lc.Value -ne $lh.'X-CopyApp')
+    Check 'native bootstrap does not issue an ambient cookie' (-not $lc -and $r.StatusCode -eq 200)
+    $match = [regex]::Match($r.Content, 'var token="([A-Za-z0-9_-]{43})"')
+    $browserToken = $match.Groups[1].Value
+    Check 'native bootstrap issues a separate browser token' ($match.Success -and $browserToken -ne $lh.'X-CopyApp')
     Check 'raw local key as cookie -> 403' ((Invoke-WebRequest "$L/pairing/status" -Headers @{ Cookie = "copyapp_local=$($lh.'X-CopyApp')" } @opt).StatusCode -eq 403)
+    Check 'browser token as cookie -> 403' ((Invoke-WebRequest "$L/local/state" -Headers @{ Cookie = "copyapp_local=$browserToken" } @opt).StatusCode -eq 403)
+    Check 'explicit browser header authorizes state' ((Invoke-WebRequest "$L/local/state" -Headers @{ 'X-CopyApp-Session' = $browserToken } @opt).StatusCode -eq 200)
     Check 'save folder on a network share -> 400' ((Invoke-WebRequest "$L/local/settings" -Headers $lh -Method POST -ContentType application/json -Body '{"saveDir":"\\\\server\\share"}' @opt).StatusCode -eq 400)
     $startup = Join-Path $oldAppdata 'Microsoft\Windows\Start Menu\Programs\Startup'
     Check 'save folder in Startup -> 400' ((Invoke-WebRequest "$L/local/settings" -Headers $lh -Method POST -ContentType application/json -Body (@{ saveDir = $startup } | ConvertTo-Json) @opt).StatusCode -eq 400)
-    Check 'local cookie alone opens /pairing/status' ((Invoke-WebRequest "$L/pairing/status" -WebSession $ls @opt).StatusCode -eq 200)
+    Check 'cookie-only control request is rejected' ((Invoke-WebRequest "$L/pairing/status" -WebSession $ls @opt).StatusCode -eq 403)
     Check 'pairing/open without key -> 403' ((Invoke-WebRequest "$L/pairing/open" -Method POST @opt).StatusCode -eq 403)
     Check 'send-file without X-CopyApp -> 403' ((Invoke-WebRequest "$L/local/send-file?path=x" -Method POST @opt).StatusCode -eq 403)
     Check 'send-file with a wrong key -> 403' ((Invoke-WebRequest "$L/local/send-file?path=x" -Method POST -Headers @{ 'X-CopyApp' = '1' } @opt).StatusCode -eq 403)
     Check 'send-file with Origin -> 403' ((Invoke-WebRequest "$L/local/send-file?path=x" -Method POST -Headers @{ 'X-CopyApp' = $lh.'X-CopyApp'; Origin = 'http://evil' } @opt).StatusCode -eq 403)
     Check 'pairing/open cross-origin -> 403' ((Invoke-WebRequest "$L/pairing/open" -Method POST -Headers @{ Origin = 'http://evil' } @opt).StatusCode -eq 403)
+
+    if ($LargeFiles) {
+        & (Join-Path $PSScriptRoot 'large-files.ps1') -BaseURL $B -LocalURL $L -LocalKey $lh.'X-CopyApp' -Cookie $hdr.Cookie -WorkDir $tmp -ReceiveDir $recv
+        Check 'real 2 GiB streaming, limit, cancellation and resume checks' $true
+    }
+    if ($Browser) {
+        $env:NODE_PATH = Join-Path $env:TEMP 'copyapp-video/node_modules'
+        node (Join-Path $PSScriptRoot 'browser.js')
+        Check 'real browser integration' ($LASTEXITCODE -eq 0)
+        # The browser integration intentionally unpairs; obtain a fresh phone session for restart checks.
+        $null = Invoke-WebRequest "$L/pairing/open" -Method POST -Headers @{ 'X-CopyApp'=$lh.'X-CopyApp'; Origin=$L } @opt
+        Invoke-WebRequest "$L/qr" -Headers $lh -OutFile "$tmp/qr.png" | Out-Null
+        $env:NODE_PATH = "$node/node_modules"
+        $pairUrl = node "$PSScriptRoot/qr-decode.js" "$tmp/qr.png"
+        $pairUrl = $pairUrl -replace '^https://[^/]+', $B
+        $r = Invoke-WebRequest $pairUrl -SessionVariable sess @opt
+        $cookie = $sess.Cookies.GetAllCookies() | Where-Object Name -eq 'copyapp_session'
+        $hdr = @{ Cookie = "$($cookie.Name)=$($cookie.Value)" }
+    }
 
     # session survives a restart; unpair revokes
     $null = Invoke-WebRequest "$L/local/settings" -Headers $lh -Method POST -ContentType application/json -Body '{"receiveMode":"folder","maxBytes":524288000,"language":"ru"}' @opt
@@ -242,7 +280,7 @@ try {
     $log = Get-Content "$dd\copyapp.log" -Raw
     $secrets = @('hotkey-real-exe-e2e', 'window-button-e2e', $text, 'explicit clipboard e2e', $lh.'X-CopyApp', $cookie.Value, ($pairUrl -replace '^.*t=', ''))
     Check 'log never contains clipboard text, the local key, session or pairing token' (-not ($secrets | Where-Object { $_ -and $log.Contains($_) }))
-    Check 'log names the version' ($log -match 'CopyApp 1\.0\.0 starting')
+    Check 'log names the version' ($log -match 'CopyApp \d+\.\d+\.\d+ starting')
     Check 'unpair -> 204' ((Invoke-WebRequest "$B/unpair" -Method POST -Headers $hdr @opt).StatusCode -eq 204)
     Check 'after unpair /status -> 401' ((Invoke-WebRequest "$B/status" -Headers $hdr @opt).StatusCode -eq 401)
 
@@ -256,7 +294,7 @@ try {
     $env:COPYAPP_DATA_DIR = "$tmp\appdata2\CopyApp"; $dd2 = $env:COPYAPP_DATA_DIR
     $download = "$tmp\download\copyapp.exe"; New-Item -ItemType Directory -Force (Split-Path $download) | Out-Null; Copy-Item $exe $download
     # Not -Wait: that would also wait for the installed copy it starts.
-    $p1 = Start-Process $download -PassThru; $null = $p1.WaitForExit(60000)
+    $p1 = Start-Process $download -WindowStyle Hidden -PassThru; $null = $p1.WaitForExit(60000)
     Check 'downloaded exe hands over to the installed copy and exits 0 within 5 s' ($p1.HasExited -and $p1.ExitCode -eq 0 -and ($p1.ExitTime - $p1.StartTime).TotalSeconds -lt 5) "$(($p1.ExitTime - $p1.StartTime).TotalSeconds) s"
     $inst = "$tmp\installed\copyapp.exe"
     Check 'installed copy in the install folder' ((Test-Path $inst) -and (Get-FileHash $inst).Hash -eq (Get-FileHash $download).Hash)
@@ -271,7 +309,7 @@ try {
     $lh2 = @{ 'X-CopyApp' = (Get-Content "$dd2\local.key").Trim() }; $L2 = "http://127.0.0.1:$((Get-Content "$dd2\local-port.txt").Trim())"
     $st2 = Invoke-RestMethod "$L2/local/state" -Headers $lh2
     Check 'first run: startup answered, pairing window open' ((Get-Content "$dd2\settings.json" -Raw | ConvertFrom-Json).autostartAsked -and $st2.autostart -and $st2.pairing.open)
-    $p2 = Start-Process $inst -ArgumentList '--open' -PassThru; $null = $p2.WaitForExit(30000)
+    $p2 = Start-Process $inst -ArgumentList '--open' -WindowStyle Hidden -PassThru; $null = $p2.WaitForExit(30000)
     Check 'Desktop shortcut while running: forwards to the running copy and exits' ($p2.ExitCode -eq 0 -and @(Get-Process copyapp).Count -eq 1)
     New-Item -ItemType Directory -Force "$tmp\received" | Out-Null; 'keep me' | Set-Content "$tmp\received\mine.txt"
     $r = Invoke-WebRequest "$L2/local/uninstall" -Method POST -Headers $lh2 @opt
@@ -285,8 +323,7 @@ try {
 finally {
     $env:APPDATA = $oldAppdata
     foreach ($key in $testEnv) { [Environment]::SetEnvironmentVariable($key, $previousEnv[$key]) }
-    Get-Process copyapp -ErrorAction SilentlyContinue | Stop-Process -Force
-    if (-not $hadRun) { Remove-ItemProperty $runKey -Name CopyApp -ErrorAction SilentlyContinue }
+    Stop-TestApps
     if (-not $hadLnk) { Remove-Item $sendTo -Force -ErrorAction SilentlyContinue }
     foreach ($f in 'note-e2e.txt', 'pic-e2e.png', 'fromPC.txt') { Remove-Item (Join-Path $recv $f) -Force -ErrorAction SilentlyContinue }
     if (-not $hadRecv -and (Test-Path $recv) -and -not (Get-ChildItem $recv)) { Remove-Item $recv -Force }

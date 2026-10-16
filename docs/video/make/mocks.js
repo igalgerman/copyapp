@@ -83,8 +83,6 @@ window.step=(n)=>{
 }`);
 
 // 4) Notepad-like window showing real text
-exports.startupChoice = () => page(`.win{left:290px;top:170px;width:700px;padding:32px}.actions{display:flex;gap:18px;margin-top:30px}`, `<div class="win"><h1>CopyApp is installed</h1><p>Desktop and Start Menu shortcuts are ready.</p><h2>Start CopyApp with Windows?</h2><p>You can change this later in Settings.</p><div class="actions"><span class="btn">Yes</span><span class="btn alt">No</span></div></div>`);
-
 exports.notepad = (title, text, hint, big) => page(`
 .win{left:190px;top:70px;width:900px;height:500px}
 pre{margin:0;padding:26px 30px;font:26px/1.5 Consolas,monospace;white-space:pre-wrap;color:#151B33}
@@ -149,26 +147,62 @@ exports.phoneCamera = (qr) => `<!doctype html><meta name=viewport content="width
 <div class="chip" id="chip">Open link in Chrome<small>CopyApp - tap to open</small></div>
 <script>window.found=()=>document.body.classList.add('on')</script></body>`;
 
-exports.chromeMenu = (icon) => `
-<style>
-.ov{position:fixed;inset:0;z-index:2147483000;font:17px "Segoe UI",system-ui,sans-serif}
-.ov .scrim{position:absolute;inset:0;background:rgba(0,0,0,.45)}
-.ov .menu{position:absolute;right:10px;top:52px;width:250px;background:#fff;color:#151B33;border-radius:14px;box-shadow:0 12px 30px rgba(0,0,0,.4);padding:6px 0}
-.ov .menu div{padding:12px 18px}.ov .menu .hit{background:#fffbe8;font-weight:700;outline:3px solid #FFD447;outline-offset:-3px}
-.ov .dlg{position:absolute;left:24px;right:24px;top:230px;background:#fff;color:#151B33;border-radius:22px;padding:22px;box-shadow:0 12px 30px rgba(0,0,0,.4)}
-.ov .dlg img{width:56px;height:56px;border-radius:12px;vertical-align:middle;margin-right:12px}
-.ov .dlg .b{display:inline-block;margin:18px 0 0 10px;padding:10px 22px;border-radius:20px;background:#2E44E8;color:#fff;font-weight:700}
-.ov .home{position:absolute;inset:0;background:linear-gradient(160deg,#2E44E8,#1d2eb8 60%,#10152A);color:#fff;text-align:center}
-.ov .home .app{position:absolute;left:30px;top:90px;width:84px;font-size:14px}
-.ov .home .app img{width:64px;height:64px;border-radius:16px;display:block;margin:0 auto 6px}
-.ov .home .app.pulse{outline:4px solid #FFD447;outline-offset:6px;border-radius:18px}
-.ov .home h2{position:absolute;left:0;right:0;bottom:60px;font-size:22px}
-@keyframes q{50%{outline-color:#fff}}
-</style>
-<div class="ov" id="ov"><div class="scrim" id="scrim"></div>
-<div class="menu" id="menu"><div>New tab</div><div>Share...</div><div class="hit" id="a2hs">Add to Home screen</div><div>Settings</div></div>
-<div class="dlg" id="dlg" style="display:none"><div style="font-size:20px;font-weight:700"><img src="${icon}">Add to Home screen?</div>
-<div style="text-align:right"><span class="b" style="background:#e4e8f3;color:#151B33">Cancel</span><span class="b" id="add">Add</span></div></div>
-<div class="home" id="home" style="display:none"><div class="app pulse" id="app"><img src="${icon}">CopyApp</div><h2>CopyApp is on your home screen</h2></div></div>`;
+// ---- scenes that frame REAL captures (the dialog / green box are PNGs of the real windows) ----
+const DESK = `
+body{background:linear-gradient(135deg,#2E44E8 0%,#6a5cf0 45%,#ffb067 100%)}
+.tbar{position:absolute;left:0;right:0;bottom:0;height:56px;background:rgba(16,21,42,.9);display:flex;align-items:center;justify-content:flex-end;padding:0 24px;color:#fff;gap:20px;font-size:17px}
+.ico{position:absolute;left:44px;top:40px;width:120px;text-align:center;color:#fff;font-size:17px;text-shadow:0 1px 4px #000}
+.ico img{width:72px;height:72px;border-radius:16px;display:block;margin:0 auto 8px;box-shadow:0 6px 16px rgba(0,0,0,.35)}
+.ico.pulse{outline:4px solid #FFD447;outline-offset:6px;border-radius:14px}
+.hintbar{position:absolute;left:0;right:0;top:600px;text-align:center;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+`;
+// the real "Start with Windows?" message box (PNG of that one window) on a stylised desktop
+exports.startupQuestion = (dlgPng, icon) => page(DESK, `<div class="ico"><img src="${icon}">CopyApp</div>
+<div style="position:absolute;left:304px;top:150px;width:672px;border-radius:6px;box-shadow:0 24px 60px rgba(0,0,0,.5)">${dlgPng ? `<img src="${dlgPng}" style="width:100%;max-height:370px;object-fit:contain;display:block">` : `<div style="background:#fff;color:#161616;font:20px Segoe UI;padding:0 0 20px;border:1px solid #bbb"><div style="background:#f2f2f2;padding:10px 18px;font-size:16px">CopyApp</div><div style="padding:30px 30px 25px;line-height:1.5">Start CopyApp automatically when Windows starts?<br><br>You can change this later in the CopyApp window or in the menu of the CopyApp icon near the clock.</div><div style="text-align:right;padding-right:25px"><span style="display:inline-block;border:2px solid #2E44E8;padding:5px 30px">Yes</span> &nbsp; <span style="display:inline-block;border:1px solid #bbb;padding:6px 30px">No</span></div></div>`}</div>
+<div class="hintbar big">${dlgPng ? 'The real CopyApp question' : 'Startup question — illustration of the real dialog'}</div><div class="tbar">&#9679; Wi-Fi &nbsp; 12:00</div>`);
+exports.desktop = (icon) => page(DESK, `<div class="ico" id="i"><img src="${icon}">CopyApp</div>
+<div class="hintbar big" id="h">A CopyApp shortcut is now on your Desktop</div><div class="tbar">&#9679; Wi-Fi &nbsp; 12:00</div>`,
+`setTimeout(()=>document.getElementById('i').classList.add('pulse'),500)`);
+exports.osdScene = (osdPng, text) => page(`.win{left:190px;top:50px;width:900px;height:480px}pre{margin:0;padding:26px 30px;font:26px/1.5 Consolas,monospace;color:#151B33}
+.tbar{position:absolute;left:0;right:0;bottom:0;height:56px;background:#151B33;color:#fff;display:flex;align-items:center;justify-content:flex-end;padding:0 24px;gap:20px;font-size:17px}
+.osd{position:absolute;right:20px;bottom:70px;width:480px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.hintbar{position:absolute;left:30px;right:auto;width:700px;top:570px;text-align:center;font-size:26px}`,
+`<div class="win"><div class="tb"><i></i><i></i><i></i> Notes - Notepad</div><pre>${esc(text)}</pre></div>
+${osdPng ? `<img class="osd" src="${osdPng}">` : `<div class="osd" style="background:#16803d;color:#fff;padding:25px;text-align:center;font:600 28px Segoe UI">✓ Sent to phone</div>`}<div class="tbar">&#9679; Wi-Fi &nbsp; 12:00</div><div class="hintbar big">${osdPng ? 'The real green box appears near the clock' : 'Confirmation near the clock — illustration'}</div>`);
+exports.tray = (icon) => page(`.tbar{position:absolute;left:0;right:0;bottom:0;height:56px;background:#151B33;color:#fff;display:flex;align-items:center;justify-content:flex-end;padding:0 24px;gap:20px;font-size:17px}
+.tbar img{width:28px;height:28px;border-radius:7px}
+.menu{position:absolute;right:30px;bottom:66px;width:340px;background:#fff;border:1px solid #b9c0d4;border-radius:10px;box-shadow:0 14px 34px rgba(0,0,0,.35);padding:6px 0;font-size:19px}
+.menu div{padding:10px 20px}.menu hr{border:0;border-top:1px solid #e4e8f3;margin:4px 0}
+.hit{background:#fffbe8;font-weight:700;outline:3px solid #FFD447;outline-offset:-3px}
+.hintbar{position:absolute;left:0;right:0;top:80px;text-align:center}`,
+`<div class="hintbar big">Click the CopyApp icon near the clock</div>
+<div class="menu"><div>Open CopyApp</div><div>Pair phone</div><div>Send clipboard to phone</div><div class="hit">Send a file to phone&hellip;</div><hr><div>Start with Windows</div><div>Uninstall&hellip;</div><div>Quit</div></div>
+<div class="tbar"><img src="${icon}"> &nbsp; &#9679; Wi-Fi &nbsp; 12:00</div>`);
+
+// ---- phone side (illustrations of Chrome's warning page and of Android's Share menu) ----
+exports.chromeWarning = () => `<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><style>
+*{box-sizing:border-box}body{margin:0;height:100vh;background:#7a1f2b;color:#fff;font:17px "Segoe UI",system-ui,sans-serif;padding:70px 26px 0;position:relative;overflow:hidden}
+.bar{position:absolute;top:0;left:0;right:0;height:52px;background:#fff;color:#444;padding:14px 16px;font-size:15px}
+h1{font-size:30px;line-height:1.15;margin:30px 0 14px}p{line-height:1.45;color:#ffe4e7}
+.b{display:inline-block;margin-top:14px;padding:12px 22px;border-radius:24px;background:#fff;color:#7a1f2b;font-weight:700}
+.adv{display:none;margin-top:22px;border-top:1px solid #ffffff55;padding-top:18px}.open .adv{display:block}
+.link{text-decoration:underline;font-weight:700;color:#fff}.pulse{outline:4px solid #FFD447;outline-offset:5px;border-radius:24px}.link.pulse{border-radius:6px}
+.il{position:absolute;bottom:10px;left:0;right:0;text-align:center;font-size:13px;color:#ffd0d5}
+</style><body><div class="bar">&#128274; 192.168.x.x:8443 &nbsp;(illustration)</div>
+<h1>Your connection is not private</h1><p>The address is your own PC on your own Wi-Fi, so this warning is expected.</p>
+<span class="b" id="adv">Advanced</span>
+<div class="adv"><p>This server could not prove it is trusted by your phone.</p><span class="link" id="go">Proceed to your PC (unsafe)</span></div>
+<div class="il">Illustration: the real warning looks a little different</div>
+<script>window.step=(n)=>{if(n==='a')document.getElementById('adv').classList.add('pulse');
+if(n==='b'){document.body.classList.add('open');document.getElementById('adv').classList.remove('pulse');document.getElementById('go').classList.add('pulse')}}</script></body>`;
+exports.androidShare = (icon) => `<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><style>
+*{box-sizing:border-box}body{margin:0;height:100vh;background:linear-gradient(170deg,#e9edf6,#cfd8f6);font:17px "Segoe UI",system-ui,sans-serif;color:#151B33;position:relative;overflow:hidden}
+.page{padding:60px 22px}.page h2{margin:0 0 10px}.page div{background:#fff;border-radius:12px;padding:16px;line-height:1.4}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:24px 24px 0 0;padding:22px;box-shadow:0 -12px 40px rgba(0,0,0,.3)}
+.sheet h3{margin:0 0 18px}.row{display:flex;gap:14px}.app{width:78px;text-align:center;font-size:14px}.app i{display:block;width:56px;height:56px;border-radius:50%;background:#e4e8f3;margin:0 auto 6px}
+.app img{width:56px;height:56px;border-radius:14px;display:block;margin:0 auto 6px}.app.pulse{outline:4px solid #FFD447;outline-offset:6px;border-radius:14px}
+.il{position:absolute;top:10px;right:10px;background:#fff;border-radius:6px;padding:3px 9px;font-size:13px;color:#4b5371}
+</style><body><div class="il">Illustration</div><div class="page"><h2>Some web page</h2><div>Text or a link you want on your PC. Tap Share in any Android app.</div></div>
+<div class="sheet"><h3>Share</h3><div class="row"><div class="app"><i></i>Messages</div><div class="app"><i></i>Drive</div><div class="app pulse"><img src="${icon}">CopyApp</div><div class="app"><i></i>More</div></div></div></body>`;
 
 exports.esc = esc;

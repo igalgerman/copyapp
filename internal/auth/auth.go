@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -91,17 +92,35 @@ func (a *Auth) PairingDeadline() time.Time {
 // Exchange consumes the token and returns a new session id, replacing any
 // older session. It fails if the token is wrong, used, or expired.
 func (a *Auth) Exchange(token string) (string, bool) {
+	sid, ok, _ := a.ExchangeWithError(token)
+	return sid, ok
+}
+
+// ExchangeWithError also reports persistence failures. A browser must not
+// receive a session cookie until the new session is durably committed.
+func (a *Auth) ExchangeWithError(token string) (string, bool, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.openLocked() || !eq(token, a.token) {
-		return "", false
+		return "", false, nil
 	}
 	a.token = ""
 	a.openUntil = time.Time{}
+	oldSession, oldUsed, oldSaved := a.session, a.lastUsed, a.savedUse
 	a.session = randomHex()
 	a.lastUsed = a.now()
-	a.saveLocked()
-	return a.session, true
+	err := a.saveLocked()
+	if err == nil && a.path != "" {
+		err = os.Remove(a.path + ".revoked")
+		if os.IsNotExist(err) {
+			err = nil
+		}
+	}
+	if err != nil {
+		a.session, a.lastUsed, a.savedUse = oldSession, oldUsed, oldSaved
+		return "", false, err
+	}
+	return a.session, true, nil
 }
 
 // Valid reports whether cookie is the current session id. A session unused
@@ -133,12 +152,12 @@ func (a *Auth) Paired() bool {
 }
 
 // Revoke drops the session and any open pairing token (Re-pair).
-func (a *Auth) Revoke() {
+func (a *Auth) Revoke() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.token, a.session = "", ""
 	a.openUntil = time.Time{}
-	a.saveLocked()
+	return a.saveLocked()
 }
 
 // Persist makes the session survive restarts by storing it in path (mode
@@ -147,6 +166,14 @@ func (a *Auth) Persist(path string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.path = path
+	a.session, a.lastUsed, a.savedUse = "", time.Time{}, time.Time{}
+	// The tombstone takes precedence even if the old session file was locked
+	// when Unpair ran. Never restore a session whose revocation was committed.
+	if _, err := os.Stat(path + ".revoked"); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil
@@ -177,27 +204,47 @@ func (a *Auth) Persist(path string) error {
 	return nil
 }
 
-func (a *Auth) saveLocked() {
+func (a *Auth) saveLocked() error {
 	if a.path == "" {
-		return
+		return nil
 	}
 	if a.session == "" {
-		os.Remove(a.path)
-		return
+		// Commit a tombstone before attempting deletion: Windows can refuse
+		// deletion of a read-only or open file while the directory is writable.
+		_, markerErr := os.Stat(a.path + ".revoked")
+		if os.IsNotExist(markerErr) {
+			markerErr = writeAtomic(a.path+".revoked", []byte("revoked\n"))
+		}
+		removeErr := os.Remove(a.path)
+		if markerErr == nil || removeErr == nil || os.IsNotExist(removeErr) {
+			return nil
+		}
+		return errors.Join(markerErr, removeErr)
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(a.path), ".session-*")
+	err := writeAtomic(a.path, []byte(a.session+" "+strconv.FormatInt(a.lastUsed.Unix(), 10)))
+	if err == nil {
+		a.savedUse = a.lastUsed
+	}
+	return err
+}
+
+func writeAtomic(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".session-*")
 	if err != nil {
-		return
+		return err
 	}
-	_, err = tmp.WriteString(a.session + " " + strconv.FormatInt(a.lastUsed.Unix(), 10))
-	a.savedUse = a.lastUsed
+	_, err = tmp.Write(data)
+	if err == nil {
+		err = tmp.Sync()
+	}
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}
 	if err == nil {
-		err = os.Rename(tmp.Name(), a.path)
+		err = os.Rename(tmp.Name(), path)
 	}
 	if err != nil {
 		os.Remove(tmp.Name())
 	}
+	return err
 }

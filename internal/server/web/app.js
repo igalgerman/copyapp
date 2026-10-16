@@ -805,11 +805,27 @@
   });
 
   $('#unpair-btn').addEventListener('click', () => openSheet('sheet-confirm'));
-  $('#confirm-unpair').addEventListener('click', async () => {
+  async function unpairPhone() {
     $('#sheet-confirm').close();
-    try { await fetch('/unpair', { method: 'POST' }); } catch { /* still forget locally */ }
+    try {
+      const response = await fetch('/unpair', { method: 'POST' });
+      if (!response.ok) {
+        let result = {}; try { result = await response.json(); } catch {}
+        if (result.code === 'session_save') {
+          goUnpaired('unpair.unsaved');
+          toast('err', ...errorText('session_save'));
+          return false;
+        }
+        throw new Error('unpair');
+      }
+    } catch {
+      toast('err', ...errorText('network'));
+      return false;
+    }
     goUnpaired('unpair.done');
-  });
+    return true;
+  }
+  $('#confirm-unpair').addEventListener('click', unpairPhone);
 
   // ---------- optional upgrade ----------
   // The app works fully in a plain browser tab (certificate warning bypassed).

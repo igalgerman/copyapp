@@ -21,7 +21,7 @@ function load(name) {
   assert.ok(match, `function ${name} exists`);
   vm.runInContext(match[0], ctx);
 }
-for (const name of ['sendText', 'sendFiles', 'sendClipboardImage', 'tooBig', 'whereMsgs', 'streamToDisk', 'pref', 'checkStatus']) load(name);
+for (const name of ['sendText', 'sendFiles', 'sendClipboardImage', 'tooBig', 'whereMsgs', 'streamToDisk', 'pref', 'checkStatus', 'unpairPhone']) load(name);
 
 const stored = new Map();
 ctx.store = { get: (k) => stored.get(k) };
@@ -118,4 +118,25 @@ assert.deepEqual(actions, ['cancel', 'release']);
 assert.match(source, /addEventListener\('ready', \(\) => \{ initialSyncDone = true;/);
 assert.match(source, /if \(initialSyncDone\) autoHandle\(item, node\)/);
 assert.doesNotMatch(source, /firstSyncAt/);
+
+// An offline/failed disconnect cannot clear the HttpOnly session cookie.
+// Keep the current phone state and show failure until the PC acknowledges it.
+let unpaired = 0;
+ctx.$ = () => ({ close() {} });
+ctx.goUnpaired = () => { unpaired++; };
+ctx.errorText = (code) => [[code], ['detail']];
+ctx.fetch = async () => { throw new Error('offline'); };
+assert.equal(await ctx.unpairPhone(), false);
+assert.equal(unpaired, 0);
+assert.equal(captures.at(-1).toast[0], 'err');
+ctx.fetch = async () => ({ ok: false, status: 500 });
+assert.equal(await ctx.unpairPhone(), false);
+assert.equal(unpaired, 0);
+ctx.fetch = async () => ({ ok: true, status: 204 });
+assert.equal(await ctx.unpairPhone(), true);
+assert.equal(unpaired, 1);
+ctx.fetch = async () => ({ ok: false, status: 500, json: async () => ({ code: 'session_save' }) });
+assert.equal(await ctx.unpairPhone(), false);
+assert.equal(unpaired, 2, 'persistent revocation failure disconnects current phone UI');
+assert.equal(captures.at(-1).toast[1][0], 'session_save');
 console.log('phone transfer behavior ok');

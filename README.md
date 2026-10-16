@@ -1,6 +1,6 @@
 # CopyApp
 
-**[עברית](README.he.md) · [Русский](README.ru.md) · English · [Website](https://igalgerman.github.io/copyapp/)**
+**[עברית](README.he.md) · [Русский](README.ru.md) · English · [Website](https://copyapp.igalg.chatgpt.site/)**
 
 CopyApp lets you copy and paste between your Windows PC and your Android phone.
 
@@ -16,7 +16,7 @@ CopyApp lets you copy and paste between your Windows PC and your Android phone.
 
 https://copyapp.igalg.chatgpt.site/
 
-or from the [latest GitHub release](https://github.com/igalgerman/copyapp/releases/latest) (with a `SHA256SUMS` file to check the download).
+or download the reviewed [CopyApp 1.0.1 executable](https://github.com/igalgerman/copyapp/releases/download/v1.0.1/copyapp.exe). The [1.0.1 release](https://github.com/igalgerman/copyapp/releases/tag/v1.0.1) includes `SHA256SUMS` to check the download.
 
 ---
 
@@ -30,11 +30,11 @@ or from the [latest GitHub release](https://github.com/igalgerman/copyapp/releas
 
 1. **Download and run `copyapp.exe`** on your PC. CopyApp installs itself for your Windows user (no administrator rights needed) and creates Desktop and Start menu shortcuts. Answer **Yes** or **No** to the question about starting with Windows. The CopyApp window opens with a QR code; the CopyApp icon stays near the clock (it may be hidden under the **^** arrow).
 2. **Scan the QR code** with your phone's camera and open the link.
-3. **If the browser says "Your connection is not private", tap Advanced → Proceed.** That's fine here: it is your own PC on your own Wi-Fi.
+3. **If the browser says "Your connection is not private", tap Advanced → Proceed only on your own trusted network.** The certificate is created by your PC. Bypassing the warning does not verify the PC's identity; see [Security](SECURITY.md).
 
 That's it. CopyApp is now open in your phone's browser, ready to send and receive. Tip: bookmark the page or choose **Add to Home screen** in Chrome's ⋮ menu.
 
-> The first time only, Windows may show **"Windows protected your PC"** (click **More info → Run anyway**: CopyApp is not signed with a paid certificate) and a **firewall prompt** (click **Allow**). Both are one-time.
+> The first time only, Windows may show **"Windows protected your PC"** (click **More info → Run anyway**: CopyApp is not digitally signed) and a **firewall prompt** (click **Allow**). Prompts may appear again after an update.
 
 ### Optional: install as an app (about 1 minute)
 
@@ -45,7 +45,7 @@ Want CopyApp in Android's **Share** menu and no "Not secure" warning? On the pho
 3. Download the certificate and install it once in Android settings (menu names differ a little between phone makers).
 4. In Chrome's ⋮ menu choose **Install app**.
 
-The certificate can only vouch for addresses on your local network, and you can remove it any time in Android settings.
+The certificate is restricted to private/local addresses and the `localhost`/`copyapp.local` names. You can remove it any time in Android settings. Android menus and installation support vary by device; the browser-tab flow remains available.
 
 ---
 
@@ -78,6 +78,8 @@ To remove CopyApp, choose **Uninstall CopyApp…** in the CopyApp window or in t
 - It works with **one phone** paired to one PC.
 - Items sent from the PC can be downloaded for **10 minutes**.
 - The largest item is **2 GB** by default. You can change it in the CopyApp window; large files are written straight to disk.
+- Android uses Chrome's download manager for file progress and cancellation. Automatic clipboard copying/downloads can be blocked by browser permissions; use the item's buttons if needed. Device-specific certificate/app installation and the Android Share menu still need verification on your phone.
+- The Windows executable is unsigned. Opening a different downloaded CopyApp binary can replace the installed one without a version/downgrade check. If the PC's LAN address changes, scan a fresh QR code.
 - The app is available in **Hebrew** (default), **Russian** and **English**. Switch with **עב / РУ / EN** at the top of the phone screen and of the CopyApp window.
 
 ---
@@ -88,7 +90,8 @@ To remove CopyApp, choose **Uninstall CopyApp…** in the CopyApp window or in t
 - The pairing QR code can be used **only once** and works for **10 minutes**.
 - When a phone pairs, the PC shows a notification with the phone's address, and the CopyApp window keeps showing it. If it was not you, choose **Unpair phone**.
 - CopyApp only talks on **your local network**. It does not open your PC to the internet.
-- Received files are saved to **Downloads\CopyApp** by default and are marked as "downloaded from the internet", so Windows warns before opening programs or Office files from them.
+- Received files are saved to **Downloads\CopyApp** by default. If redirected Downloads is unsafe (for example, a network share), CopyApp uses `%LOCALAPPDATA%\CopyApp\Received`. The window shows the actual folder. Files are marked as "downloaded from the internet" where supported; executable files still need your judgment before opening.
+- Unpairing clears pending PC items; replacing the existing paired phone also clears its pending outbox. A failed phone-side disconnect is reported as a failure, so retry it when the PC is reachable.
 - You can **unpair at any time**: in the CopyApp window or the icon menu choose **Unpair phone**; on the phone choose **⋯ → Unpair this phone**.
 - A phone that is not used for 180 days must pair again.
 
@@ -111,8 +114,8 @@ More details: [SECURITY.md](SECURITY.md).
 
 ## Videos
 
-- [Install video](https://copyapp.igalg.chatgpt.site/assets/install-1.0.0.mp4)
-- [Use video](https://copyapp.igalg.chatgpt.site/assets/use-1.0.0.mp4)
+- [Install video — 1.0.1](https://github.com/igalgerman/copyapp/releases/download/v1.0.1/install.mp4)
+- [Use video — 1.0.1](https://github.com/igalgerman/copyapp/releases/download/v1.0.1/use.mp4)
 
 The website also includes these videos.
 
@@ -123,10 +126,12 @@ The website also includes these videos.
 Requirements: Go 1.27+ on Windows (PowerShell 7 for the scripts).
 
 ```
-pwsh -File build.ps1 -Version 1.0.0 -Test   # vet + tests, then dist\copyapp.exe and dist\SHA256SUMS
+pwsh -File build.ps1 -Version 1.0.1 -Test   # vet + tests, then dist\copyapp.exe and dist\SHA256SUMS
 pwsh -File docs\e2e\run.ps1                 # end-to-end test of the real exe (isolated temp folders)
 ```
 
 `build.ps1` embeds the icon, version information and manifest (`cmd/copyapp/winres/winres.json`, via go-winres), builds with `-H=windowsgui -s -w -X main.version=…` and prints the SHA-256. A plain `go build ./cmd/copyapp` also works (it uses the committed `rsrc_windows_amd64.syso`, version "dev").
 
 Changes: [CHANGELOG.md](CHANGELOG.md). License: [MIT](LICENSE).
+
+`docs/e2e/browser.js` exercises real Chromium against an already-running isolated app using `COPYAPP_DATA_DIR`, `COPYAPP_RECEIVE_DIR` and Playwright/jsQR/pngjs on `NODE_PATH`. It changes the test clipboard and writes test received files; it never starts the executable. Native Android installation/Share behavior needs a real-device check. CI always tests/builds and uploads a workflow artifact; an existing published release is preserved without replacing its assets.

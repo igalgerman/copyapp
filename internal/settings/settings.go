@@ -4,6 +4,7 @@ package settings
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,6 +75,43 @@ func (s *Settings) normalize(defSave string) {
 // and not inside Windows or Program Files. A hand-edited settings file or a
 // picked folder that fails this falls back to the default folder.
 func ValidSaveDir(dir string) bool {
+	if !validLocalPath(dir) {
+		return false
+	}
+	c, err := resolveDestination(dir)
+	if err != nil || !validLocalPath(c) {
+		return false
+	}
+	lc := strings.ToLower(c)
+	var denied []string
+	for _, env := range []string{"SystemRoot", "windir", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"} {
+		denied = append(denied, os.Getenv(env))
+	}
+	for _, env := range []string{"APPDATA", "ProgramData", "ALLUSERSPROFILE"} {
+		if v := os.Getenv(env); v != "" {
+			denied = append(denied, filepath.Join(v, `Microsoft\Windows\Start Menu`))
+		}
+	}
+	denied = append(denied, ExtraDenied...)
+	for _, d := range denied {
+		if d == "" {
+			continue
+		}
+		resolved, err := resolveDestination(d)
+		if err != nil {
+			resolved = filepath.Clean(d)
+		}
+		for _, path := range []string{filepath.Clean(d), resolved} {
+			sys := strings.ToLower(path)
+			if len(sys) > 3 && (lc == sys || strings.HasPrefix(lc, sys+`\`)) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func validLocalPath(dir string) bool {
 	if dir == "" || strings.ContainsRune(dir, 0) || !filepath.IsAbs(dir) {
 		return false
 	}
@@ -87,29 +125,40 @@ func ValidSaveDir(dir string) bool {
 		return false
 	}
 	for _, part := range strings.Split(rest, `\`) {
-		if reservedName(part) {
-			return false
-		}
-	}
-	lc := strings.ToLower(c)
-	var denied []string
-	for _, env := range []string{"SystemRoot", "windir", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"} {
-		denied = append(denied, os.Getenv(env))
-	}
-	// Start menu folders, including Startup: files there run at sign-in.
-	for _, env := range []string{"APPDATA", "ProgramData", "ALLUSERSPROFILE"} {
-		if v := os.Getenv(env); v != "" {
-			denied = append(denied, filepath.Join(v, `Microsoft\Windows\Start Menu`))
-		}
-	}
-	denied = append(denied, ExtraDenied...)
-	for _, d := range denied {
-		sys := strings.ToLower(filepath.Clean(d))
-		if len(sys) > 3 && (lc == sys || strings.HasPrefix(lc, sys+`\`)) {
+		if reservedName(part) || part != strings.TrimRight(part, " .") {
 			return false
 		}
 	}
 	return true
+}
+
+// resolveDestination resolves the existing ancestor (including junctions,
+// mapped drives and short names), then appends the not-yet-created suffix.
+func resolveDestination(dir string) (string, error) {
+	path := filepath.Clean(dir)
+	var tail []string
+	for {
+		_, err := os.Lstat(path)
+		if err == nil {
+			resolved, err := canonicalExisting(path)
+			if err != nil {
+				return "", err
+			}
+			for i := len(tail) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, tail[i])
+			}
+			return resolved, nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return "", err
+		}
+		tail = append(tail, filepath.Base(path))
+		path = parent
+	}
 }
 
 // ExtraDenied lists more folders ValidSaveDir refuses (and everything below
@@ -141,6 +190,9 @@ type Store struct {
 // (the language is taken over from the older lang.txt). Nothing is written
 // until Update.
 func Load(dir, defaultSaveDir string) (*Store, error) {
+	if !ValidSaveDir(defaultSaveDir) {
+		return nil, fmt.Errorf("settings: unsafe default receive folder %q", defaultSaveDir)
+	}
 	st := &Store{path: filepath.Join(dir, FileName), defSave: defaultSaveDir, s: Defaults(defaultSaveDir)}
 	b, err := os.ReadFile(st.path)
 	switch {

@@ -60,6 +60,14 @@ func New() *Store {
 	return &Store{items: map[string]Item{}, now: time.Now, maxTotal: MaxTotalSize}
 }
 
+// Clear forgets queued transfers when the paired phone is removed or replaced.
+// Disk-backed items refer to the user's original files, which are never deleted.
+func (s *Store) Clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.items = make(map[string]Item)
+}
+
 func (s *Store) evictLocked() {
 	cut := s.now().Add(-Expiry)
 	for id, it := range s.items {

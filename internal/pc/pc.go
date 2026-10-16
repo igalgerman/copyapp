@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 
+	"github.com/igalgerman/copyapp/internal/settings"
 	"github.com/igalgerman/copyapp/internal/store"
 )
 
@@ -185,7 +186,22 @@ func ReceivedDir() string {
 		h, _ := os.UserHomeDir()
 		d = filepath.Join(h, "Downloads")
 	}
-	return filepath.Join(d, AppName)
+	local, _ := windows.KnownFolderPath(windows.FOLDERID_LocalAppData, 0)
+	return chooseReceivedDir(d, local)
+}
+
+func chooseReceivedDir(downloads, local string) string {
+	preferred := filepath.Join(downloads, AppName)
+	if settings.ValidSaveDir(preferred) {
+		return preferred
+	}
+	// Downloads may be redirected to a network share or a protected folder.
+	// Keep the default receive destination local even in that configuration.
+	fallback := filepath.Join(local, AppName, "Received")
+	if settings.ValidSaveDir(fallback) {
+		return fallback
+	}
+	return "" // settings.Load fails closed if both destinations are unsafe
 }
 
 // OpenFolder creates path if needed and opens it in Explorer.

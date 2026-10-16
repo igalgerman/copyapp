@@ -2,17 +2,20 @@
 //   node compose.js install|use      env: FFMPEG (path to ffmpeg.exe), RAW_DIR, OUT_DIR, WEB_DIR, NODE_PATH
 const fs = require('fs'), path = require('path'), cp = require('child_process');
 const { chromium } = require('playwright');
+const mocks = require('./mocks');
 const name = process.argv[2];
+if (!['install', 'use'].includes(name)) throw new Error('Expected install or use');
 const FF = process.env.FFMPEG || 'ffmpeg', RAW = path.join(process.env.RAW_DIR, name), OUT = process.env.OUT_DIR, WEB = process.env.WEB_DIR;
+const replaceOSD = name === 'use' && !fs.existsSync(path.join(RAW, 'osd.png'));
 const meta = JSON.parse(fs.readFileSync(path.join(RAW, 'meta.json'), 'utf8'));
 // Windows font. ffmpeg's filter syntax treats ':' in "C:/..." as an option separator, so the font is
 // copied next to the work files as font.ttf and referenced by that relative name (no colon to escape).
 const FONT = 'C:/Windows/Fonts/segoeuib.ttf';
-const run = (args) => { const r = cp.spawnSync(FF, ['-y', '-hide_banner', '-loglevel', 'error', ...args], { cwd: RAW, stdio: 'inherit' }); if (r.status) throw new Error('ffmpeg failed: ' + args.join(' ')); };
+const run = (args) => { const r = cp.spawnSync(FF, ['-y', '-hide_banner', '-loglevel', 'error', ...args], { cwd: RAW, stdio: 'inherit', windowsHide: true }); if (r.error || r.status !== 0) throw new Error('ffmpeg failed: ' + (r.error?.message || args.join(' '))); };
 
 const CARDS = {
-  install: { title: 'How to install CopyApp', sub: 'About one minute. No technical skills needed.', out: 'You are connected!', outSub: 'Next: watch "How to use CopyApp"' },
-  use: { title: 'How to use CopyApp', sub: 'Copy on one device, paste on the other.', out: 'Copy. Paste. Done.', outSub: 'Free. Works on your own Wi-Fi. Nothing goes to the cloud.' },
+    install: { title: 'How to install CopyApp', sub: 'Connect your phone in a few simple steps.', out: 'CopyApp — free, no cloud', outSub: 'You are connected. Next: How to use CopyApp' },
+  use: { title: 'How to use CopyApp', sub: 'Copy on one device, paste on the other.', out: 'CopyApp — free, no cloud', outSub: 'Works on your own Wi-Fi. Nothing goes to the cloud.' },
 }[name];
 
 async function cards() {
@@ -33,31 +36,43 @@ async function cards() {
     await p.waitForTimeout(400);
     await p.screenshot({ path: path.join(RAW, f + '.png') });
   }
+  if (replaceOSD) {
+    await p.goto('about:blank');
+    await p.setContent(mocks.osdScene(null, 'Shopping list: coffee, apples, bread'));
+    await p.screenshot({ path: path.join(RAW, 'osd-illustration.png') });
+  }
   await b.close();
 }
 
 (async () => {
   await cards();
   fs.copyFileSync(FONT, path.join(RAW, 'font.ttf'));
-  const marks = meta.marks; const end = marks.find((m) => m.text === 'END').t;
+  // Context/clipboard setup can leave blank leading browser frames. Start at
+  // the first completed scene, and align both recordings on the PC timeline.
+  const start = meta.marks[0].t;
+  const marks = meta.marks.map(m => ({ ...m, t: m.t - start })); const end = marks.find((m) => m.text === 'END').t;
+  if (!Number.isFinite(end) || end <= 0 || !Number.isFinite(meta.phoneOffset)) throw new Error('Incomplete recording timeline');
   const caps = marks.filter((m) => m.text !== 'END').map((m, i, a) => ({ ...m, t1: (a[i + 1] ? a[i + 1].t : end) }));
   caps.forEach((c, i) => fs.writeFileSync(path.join(RAW, `cap${i}.txt`), c.text));
-  const dt = (file, extra) => `drawtext=fontfile=font.ttf:textfile=${file}:fontcolor=0x1E1A05:fontsize=29:x=(w-text_w)/2:y=650+(70-text_h)/2${extra || ''}`;
+  const dt = (file, extra) => `drawtext=fontfile=font.ttf:textfile=${file}:fontcolor=0x1E1A05:fontsize=33:x=(w-text_w)/2:y=640+(80-text_h)/2${extra || ''}`;
   const lab = (t, x, y) => `drawtext=fontfile=font.ttf:text='${t}':fontcolor=0xFFD447:fontsize=26:x=${x}:y=${y}`;
+  const osdStart = marks.find(m => m.text.startsWith('A green '))?.t;
+  const osdEnd = marks.find(m => m.text.startsWith('Send a file:'))?.t;
   const filters = [
     `color=c=0x1C2A9C:s=1280x720:r=25:d=${end.toFixed(2)}[bg]`,
-    `[0:v]trim=0:${end.toFixed(2)},setpts=PTS-STARTPTS,fps=25,scale=880:495,pad=892:507:6:6:color=white[pc]`,
-    `[1:v]setpts=PTS-STARTPTS,fps=25,scale=268:580:flags=lanczos,pad=288:600:10:10:color=0x0b0d17[ph]`,
-    `[bg][pc]overlay=28:78[a]`, `[a][ph]overlay=964:46[b]`,
-    `[b]drawbox=x=0:y=650:w=1280:h=70:color=0xFFD447:t=fill,${lab('On your PC', 28, 36)},${lab('On your phone', 964, 8)},` +
+    `[0:v]trim=start=${start.toFixed(3)}:duration=${end.toFixed(2)},setpts=PTS-STARTPTS,fps=25,scale=880:495,pad=892:507:6:6:color=white[${replaceOSD ? 'pc0' : 'pc'}]`,
+    ...(replaceOSD ? [`[3:v]fps=25,scale=880:495,pad=892:507:6:6:color=white[osd]`, `[pc0][osd]overlay=0:0:enable='between(t,${osdStart.toFixed(2)},${osdEnd.toFixed(2)})'[pc]`] : []),
+    `[1:v]trim=start=${Math.max(0, start + meta.phoneOffset).toFixed(3)}:duration=${end.toFixed(2)},setpts=PTS-STARTPTS,fps=25,scale=282:610:flags=lanczos,pad=302:630:10:10:color=0x0b0d17[ph]`,
+    `[bg][pc]overlay=28:84[a]`, `[a][ph]overlay=950:4[b]`,
+    `[b]drawbox=x=0:y=640:w=1280:h=80:color=0xFFD447:t=fill,${lab('On your PC', 28, 36)},` +
       caps.map((c, i) => dt(`cap${i}.txt`, `:enable='between(t,${c.t.toFixed(2)},${c.t1.toFixed(2)})'`)).join(',') + `[v]`,
   ].join(';');
   fs.writeFileSync(path.join(RAW, 'filter.txt'), filters);
-  const common = ['-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p', '-r', '25', '-c:a', 'aac', '-b:a', '64k', '-ar', '44100', '-ac', '2'];
+  const common = ['-c:v', 'libx264', '-preset', 'slow', '-crf', '26', '-pix_fmt', 'yuv420p', '-r', '25', '-c:a', 'aac', '-b:a', '64k', '-ar', '44100', '-ac', '2'];
   const sil = ['-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo'];
-  run(['-i', 'pc.webm', '-itsoffset', String(meta.phoneOffset), '-i', 'phone.webm', ...sil, '-/filter_complex', 'filter.txt', '-map', '[v]', '-map', '2:a', '-t', end.toFixed(2), ...common, 'main.mp4']);
+  run(['-i', 'pc.webm', '-i', 'phone.webm', ...sil, ...(replaceOSD ? ['-loop', '1', '-i', 'osd-illustration.png'] : []), '-/filter_complex', 'filter.txt', '-map', '[v]', '-map', '2:a', '-t', end.toFixed(2), ...common, 'main.mp4']);
   for (const f of ['intro', 'outro'])
-    run(['-loop', '1', '-t', '4', '-i', f + '.png', ...sil, '-vf', 'fade=in:0:12,fade=out:st=3.5:d=0.5,format=yuv420p', '-t', '4', ...common, '-shortest', f + '.mp4']);
+    run(['-loop', '1', '-t', '3.5', '-i', f + '.png', ...sil, '-vf', 'fade=in:0:12,fade=out:st=3:d=0.5,format=yuv420p', '-t', '3.5', ...common, '-shortest', f + '.mp4']);
   fs.writeFileSync(path.join(RAW, 'list.txt'), "file 'intro.mp4'\nfile 'main.mp4'\nfile 'outro.mp4'\n");
   fs.mkdirSync(OUT, { recursive: true });
   run(['-f', 'concat', '-safe', '0', '-i', 'list.txt', '-c', 'copy', '-movflags', '+faststart', path.join(OUT, name + '.mp4')]);

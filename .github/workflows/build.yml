@@ -1,7 +1,8 @@
 name: build
 
 # Tag v1.2.3 -> test, build dist/copyapp.exe with build.ps1 and attach it,
-# with SHA256SUMS, to the GitHub release of that tag (created if missing).
+# with SHA256SUMS, only when that tag has no existing GitHub release.
+# Existing releases may contain independently verified binaries: never replace them.
 on:
   push:
     tags: ['v*']
@@ -59,5 +60,11 @@ jobs:
         run: |
           $tag = '${{ github.ref_name }}'
           gh release view $tag *> $null
-          if ($LASTEXITCODE) { gh release create $tag --title "CopyApp $tag" --notes "See CHANGELOG.md." }
-          gh release upload $tag dist/copyapp.exe dist/SHA256SUMS --clobber
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag already exists; preserving its verified assets. CI build is available as a workflow artifact."
+            exit 0
+          }
+          gh release create $tag --title "CopyApp $tag" --notes "See CHANGELOG.md."
+          if ($LASTEXITCODE) { throw 'Could not create release; no assets will be uploaded.' }
+          gh release upload $tag dist/copyapp.exe dist/SHA256SUMS
+          if ($LASTEXITCODE) { throw 'Could not attach release assets.' }

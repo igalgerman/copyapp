@@ -1,8 +1,8 @@
 # CopyApp website
 
-The product site for CopyApp, live at https://igalgerman.github.io/copyapp/.
+The tracked product site for CopyApp 1.0.1. The canonical public URL is https://copyapp.igalg.chatgpt.site/; GitHub Pages at https://igalgerman.github.io/copyapp/ is the tracked mirror.
 
-It is plain HTML, CSS and JavaScript with no build step and no external requests (no CDNs, fonts, analytics or cookies). Every link is relative, so the same files work at `/copyapp/`, at a domain root, and when opened straight from disk (`file://`).
+It is plain HTML, CSS and JavaScript with no build step. Fonts, styles and scripts are local; there are no analytics or trackers. Downloads and videos use the versioned GitHub release assets. Local asset links are relative, so the same files work at `/copyapp/`, at a domain root, and from disk (`file://`). The site remembers language/theme in `localStorage`.
 
 ## Files
 
@@ -16,7 +16,7 @@ It is plain HTML, CSS and JavaScript with no build step and no external requests
 | `assets/icon.svg` | Logo and favicon. |
 | `assets/bricolage.woff2` | Bricolage Grotesque display font (SIL Open Font License). |
 | `assets/poster-install.svg`, `assets/poster-use.svg` | Video posters, also shown if a video file is missing. |
-| `assets/install.mp4`, `assets/use.mp4` | The two how-to videos. Copy the final recordings here under exactly these names. |
+| GitHub release `v1.0.1`: `install.mp4`, `use.mp4` | The two how-to videos, served directly from the same release as the executable. No local video copies are required. |
 | `assets/og.png` | Social preview image. |
 
 ## Deploy
@@ -25,7 +25,9 @@ Deployment is automatic. `.github/workflows/pages.yml` publishes the `site/` fol
 
 The first time only, turn on Pages in the repository: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 
-The videos are served from this folder, so `assets/install.mp4` and `assets/use.mp4` have to be committed for the live site to show them. Until they are, the page shows the poster and the "open the video" links return 404.
+All download/video links pin `https://github.com/igalgerman/copyapp/releases/download/v1.0.1/{copyapp.exe,install.mp4,use.mp4}`. Publish those verified assets before deploying this version of the page. The checksum link points to the same version's release page. GitHub release URLs are version-pinned; the release workflow never overwrites assets of an existing release.
+
+The ignored `landing/` directory is a separate hosted deployment workspace and is not uploaded by Pages. For subsequent edits, use `site/` as the reviewed source and copy/package those files for the hosted deployment; do not assume changes to `landing/` reach GitHub Pages. Both deployments must retain the same versioned release URLs. The visible installation notes include the optional Android Share-menu setup and current limitations in Hebrew, English and Russian.
 
 ## Preview locally
 

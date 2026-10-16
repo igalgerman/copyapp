@@ -16,11 +16,11 @@ func TestDefaults(t *testing.T) {
 func TestLoadMissingGivesDefaultsAndMigratesLang(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "lang.txt"), []byte("ru\n"), 0o600)
-	st, err := Load(dir, "X")
+	st, err := Load(dir, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g := st.Get(); g.Language != "ru" || g.SaveDir != "X" {
+	if g := st.Get(); g.Language != "ru" || g.SaveDir != dir {
 		t.Fatalf("%+v", g)
 	}
 	if _, err := os.Stat(filepath.Join(dir, FileName)); err == nil {
@@ -30,7 +30,7 @@ func TestLoadMissingGivesDefaultsAndMigratesLang(t *testing.T) {
 
 func TestUpdatePersistsAndNormalizes(t *testing.T) {
 	dir := t.TempDir()
-	st, _ := Load(dir, "def")
+	st, _ := Load(dir, dir)
 	if _, err := st.Update(func(s *Settings) {
 		s.ReceiveMode = ModeFolder
 		s.MaxBytes = 500 << 20
@@ -39,23 +39,23 @@ func TestUpdatePersistsAndNormalizes(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	st2, err := Load(dir, "def")
+	st2, err := Load(dir, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	g := st2.Get()
-	if g.ReceiveMode != ModeFolder || g.MaxBytes != 500<<20 || !g.AutostartAsked || g.Language != "en" || g.SaveDir != "def" {
+	if g.ReceiveMode != ModeFolder || g.MaxBytes != 500<<20 || !g.AutostartAsked || g.Language != "en" || g.SaveDir != dir {
 		t.Fatalf("%+v", g)
 	}
 	// Garbage is repaired on load.
 	os.WriteFile(filepath.Join(dir, FileName), []byte(`{"language":"xx","receiveMode":"zip","maxBytes":-5,"saveDir":""}`), 0o600)
-	st3, _ := Load(dir, "def")
-	if g := st3.Get(); g.Language != "he" || g.ReceiveMode != ModeClipboard || g.MaxBytes != DefaultMaxBytes || g.SaveDir != "def" {
+	st3, _ := Load(dir, dir)
+	if g := st3.Get(); g.Language != "he" || g.ReceiveMode != ModeClipboard || g.MaxBytes != DefaultMaxBytes || g.SaveDir != dir {
 		t.Fatalf("%+v", g)
 	}
 	// Corrupt JSON: defaults, not an error that stops the app.
 	os.WriteFile(filepath.Join(dir, FileName), []byte(`{`), 0o600)
-	if st4, err := Load(dir, "def"); err != nil || st4.Get().MaxBytes != DefaultMaxBytes {
+	if st4, err := Load(dir, dir); err != nil || st4.Get().MaxBytes != DefaultMaxBytes {
 		t.Fatalf("corrupt: %v", err)
 	}
 }
@@ -65,7 +65,7 @@ func TestValidSaveDir(t *testing.T) {
 	if sys == "" {
 		sys = `C:\Windows`
 	}
-	for _, ok := range []string{`C:\Users\me\Downloads\CopyApp`, `D:\`, `d:\Phone stuff`, t.TempDir()} {
+	for _, ok := range []string{`C:\Users\me\Downloads\CopyApp`, `C:\`, filepath.Join(t.TempDir(), "Phone stuff"), t.TempDir()} {
 		if !ValidSaveDir(ok) {
 			t.Errorf("refused %q", ok)
 		}

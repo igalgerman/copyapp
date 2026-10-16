@@ -10,6 +10,7 @@ import (
 	"github.com/igalgerman/copyapp/internal/i18n"
 	"github.com/igalgerman/copyapp/internal/secret"
 	"github.com/igalgerman/copyapp/internal/settings"
+	"github.com/igalgerman/copyapp/internal/tlsutil"
 )
 
 // localPost guards the control window's state-changing routes against other
@@ -51,17 +52,19 @@ type phoneState struct {
 }
 
 type localState struct {
-	Pairing     pairState         `json:"pairing"`
-	Phone       phoneState        `json:"phone"`
-	WiFi        string            `json:"wifi"`
-	Address     string            `json:"address"`
-	Settings    settings.Settings `json:"settings"`
-	Autostart   bool              `json:"autostart"`
-	Transfers   []Transfer        `json:"transfers"`
-	SizeChoices []int64           `json:"sizeChoices"`
-	LogPath     string            `json:"logPath"`
-	Hotkey      string            `json:"hotkey"`
-	Version     string            `json:"version"`
+	Pairing          pairState         `json:"pairing"`
+	Phone            phoneState        `json:"phone"`
+	WiFi             string            `json:"wifi"`
+	Address          string            `json:"address"`
+	Settings         settings.Settings `json:"settings"`
+	Autostart        bool              `json:"autostart"`
+	Transfers        []Transfer        `json:"transfers"`
+	SizeChoices      []int64           `json:"sizeChoices"`
+	LogPath          string            `json:"logPath"`
+	Hotkey           string            `json:"hotkey"`
+	Version          string            `json:"version"`
+	Fingerprint      string            `json:"fingerprint"`
+	ShortFingerprint string            `json:"shortFingerprint"`
 }
 
 func (s *Server) phone() phoneState {
@@ -81,16 +84,18 @@ func (s *Server) phone() phoneState {
 
 func (s *Server) snapshot() localState {
 	st := localState{
-		Pairing:     s.state(),
-		Phone:       s.phone(),
-		WiFi:        s.wifiName(),
-		Address:     s.cfg.BaseURL(),
-		Settings:    s.cfg.Settings.Get(),
-		Transfers:   s.Transfers(),
-		SizeChoices: settings.SizeChoices,
-		LogPath:     s.cfg.LogPath,
-		Hotkey:      "Ctrl+Alt+C",
-		Version:     s.cfg.Version,
+		Pairing:          s.state(),
+		Phone:            s.phone(),
+		WiFi:             s.wifiName(),
+		Address:          s.cfg.BaseURL(),
+		Settings:         s.cfg.Settings.Get(),
+		Transfers:        s.Transfers(),
+		SizeChoices:      settings.SizeChoices,
+		LogPath:          s.cfg.LogPath,
+		Hotkey:           "Ctrl+Alt+C",
+		Version:          s.cfg.Version,
+		Fingerprint:      fingerprint(s.cfg.CAPEM),
+		ShortFingerprint: tlsutil.ShortFingerprint(s.cfg.CAPEM),
 	}
 	if s.cfg.Autostart != nil {
 		st.Autostart = s.cfg.Autostart()
@@ -224,7 +229,11 @@ func (s *Server) localOpenFolder(w http.ResponseWriter, r *http.Request) {
 
 // localRepair forgets the phone and opens a new pairing window.
 func (s *Server) localRepair(w http.ResponseWriter, r *http.Request) {
-	s.Unpair()
+	if err := s.Unpair(); err != nil {
+		s.cfg.Logf("unpair: could not persist revocation: %v", err)
+		jsonError(w, http.StatusInternalServerError, "session_save", "unpaired for this run, but could not save revocation; the old phone may regain access after restart")
+		return
+	}
 	s.StartPairing()
 	w.WriteHeader(http.StatusNoContent)
 }

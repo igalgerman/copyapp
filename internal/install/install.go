@@ -292,7 +292,7 @@ func ScheduleUninstall(pid int, p Paths, dataDir string, deleteData bool) error 
 	files := []string{p.Exe(), p.Exe() + ".new"}
 	if deleteData {
 		dirs = append(dirs, dataDir)
-		for _, name := range []string{"settings.json", "lang.txt", "session.json", "local.key", "port.txt", "local-port.txt", "copyapp.log", "copyapp.log.1", "ca.crt", "ca.key", "leaf.crt", "leaf.key"} {
+		for _, name := range []string{"settings.json", "lang.txt", "session.json", "session.json.revoked", "local.key", "port.txt", "local-port.txt", "copyapp.log", "copyapp.log.1", "ca.crt", "ca.key", "leaf.crt", "leaf.key"} {
 			files = append(files, filepath.Join(dataDir, name))
 		}
 	}
