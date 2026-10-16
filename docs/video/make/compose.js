@@ -62,7 +62,7 @@ async function cards() {
     `color=c=0x1C2A9C:s=1280x720:r=25:d=${end.toFixed(2)}[bg]`,
     `[0:v]trim=start=${start.toFixed(3)}:duration=${end.toFixed(2)},setpts=PTS-STARTPTS,fps=25,scale=880:495,pad=892:507:6:6:color=white[${replaceOSD ? 'pc0' : 'pc'}]`,
     ...(replaceOSD ? [`[3:v]fps=25,scale=880:495,pad=892:507:6:6:color=white[osd]`, `[pc0][osd]overlay=0:0:enable='between(t,${osdStart.toFixed(2)},${osdEnd.toFixed(2)})'[pc]`] : []),
-    `[1:v]trim=start=${Math.max(0, start + meta.phoneOffset).toFixed(3)}:duration=${end.toFixed(2)},setpts=PTS-STARTPTS,fps=25,scale=282:610:flags=lanczos,pad=302:630:10:10:color=0x0b0d17[ph]`,
+    `[1:v]trim=start=${Math.max(0, start - meta.phoneOffset).toFixed(3)}:duration=${end.toFixed(2)},setpts=PTS-STARTPTS,fps=25,scale=282:610:flags=lanczos,pad=302:630:10:10:color=0x0b0d17[ph]`,
     `[bg][pc]overlay=28:84[a]`, `[a][ph]overlay=950:4[b]`,
     `[b]drawbox=x=0:y=640:w=1280:h=80:color=0xFFD447:t=fill,${lab('On your PC', 28, 36)},` +
       caps.map((c, i) => dt(`cap${i}.txt`, `:enable='between(t,${c.t.toFixed(2)},${c.t1.toFixed(2)})'`)).join(',') + `[v]`,

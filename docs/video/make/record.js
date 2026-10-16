@@ -92,6 +92,7 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
       .replace(/[A-Za-z]:\\[^\r\n<>"']*?copyapp-video-[a-f0-9]{32}\\received-\w+/gi, 'C:\\Users\\You\\Downloads\\CopyApp')
       .replace(/[A-Za-z]:\\[^\r\n<>"']*?copyapp-video-[a-f0-9]{32}\\appdata-\w+\\CopyApp/gi, 'C:\\Users\\You\\AppData\\Roaming\\CopyApp')
       .replace(/[A-Za-z]:\\Users\\[^\\\s]+/gi, 'C:\\Users\\You')
+      .replace(/\blocalhost\b/gi, '192.168.1.20')
       .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, '192.168.1.20');
     const run = () => {
       const qr = document.querySelector('#qrimg');
@@ -113,8 +114,8 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
   await phoneCtx.addInitScript(maskScript, PUBLIC_QR);
   await phoneCtx.addInitScript(() => { try { localStorage.setItem('copyapp.lang', 'en'); localStorage.setItem('tipDismissed', '1'); localStorage.setItem('setupDismissed', '1'); } catch {} });
 
-  pcT0 = Date.now(); const pc = await pcCtx.newPage();
-  const phT0 = Date.now(); const ph = await phoneCtx.newPage();
+  const pc = await pcCtx.newPage(); pcT0 = Date.now();
+  const ph = await phoneCtx.newPage(); const phT0 = Date.now();
   const phoneOffset = (phT0 - pcT0) / 1000;
   const goPC = async (html) => { await pc.goto('about:blank'); await pc.setContent(html, { waitUntil: 'load' }); await pc.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); };
   const goWin = async () => {
