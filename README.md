@@ -4,8 +4,10 @@
 
 CopyApp lets you copy and paste between your Windows PC and your Android phone.
 
+Development work for issues #1–#4 is documented in [diagnostics](docs/DIAGNOSTICS.md), [Android companion](docs/ANDROID.md), [Windows hotkey verification](docs/HOTKEY-QA.md), and the [Hebrew real-device tutorial recording kit](docs/video/REAL-CAPTURE.he.md). Windows/Android builds pass CI; owner setup and physical-device validation remain required. The downloads below remain the previously published releases. Four new tutorial recordings are not yet available. The [updated website mirror](https://igalgerman.github.io/copyapp/) explains the browser/PWA and optional APK paths.
+
 - Copy and paste **text**, **images**, and **files** between your PC and your phone.
-- Works over **your own Wi-Fi**. Nothing is sent to the internet or to any cloud.
+- Transfers work over **your own Wi-Fi**; clipboard contents and files stay on your local network. Builds configured for Sentry send content-free diagnostic events to that service.
 - It is **free** and open source ([MIT license](LICENSE)).
 
 ---
@@ -60,7 +62,7 @@ The certificate is restricted to private/local addresses and the `localhost`/`co
 - After the optional app install: use the Android **Share** menu on a text, image, or file and choose **CopyApp**. The phone asks **Send to your PC?** before anything is sent.
 
 **PC to phone**
-- Press **Ctrl+Alt+C** to send what is on your PC clipboard to your phone. A green **✓ Sent to phone** box appears near the clock for a moment, and you hear a short sound.
+- Press the active shortcut shown in CopyApp (normally **Ctrl+Alt+C**) to send the PC clipboard. Current development builds distinguish **Queued on PC** from **Published for connected phone**; neither confirms the phone copied it. Check the item on the phone.
 - Or click **Send clipboard to phone** in the CopyApp icon menu or in the CopyApp window.
 - Or right-click a file and choose **Send to → Phone (CopyApp)**. On Windows 11, choose **Show more options** first.
 - If another program already uses Ctrl+Alt+C, CopyApp uses **Ctrl+Alt+Shift+C** instead and tells you so.
@@ -89,7 +91,7 @@ To remove CopyApp, choose **Uninstall CopyApp…** in the CopyApp window or in t
 - All data sent between your PC and phone is **encrypted**.
 - The pairing QR code can be used **only once** and works for **10 minutes**.
 - When a phone pairs, the PC shows a notification with the phone's address, and the CopyApp window keeps showing it. If it was not you, choose **Unpair phone**.
-- CopyApp only talks on **your local network**. It does not open your PC to the internet.
+- Transfers use **your local network**. CopyApp does not open your PC to the internet. Optional Sentry diagnostics use outbound HTTPS; see [diagnostics setup and data](docs/DIAGNOSTICS.md).
 - Received files are saved to **Downloads\CopyApp** by default. If redirected Downloads is unsafe (for example, a network share), CopyApp uses `%LOCALAPPDATA%\CopyApp\Received`. The window shows the actual folder. Files are marked as "downloaded from the internet" where supported; executable files still need your judgment before opening.
 - Unpairing clears pending PC items; replacing the existing paired phone also clears its pending outbox. A failed phone-side disconnect is reported as a failure, so retry it when the PC is reachable.
 - You can **unpair at any time**: in the CopyApp window or the icon menu choose **Unpair phone**; on the phone choose **⋯ → Unpair this phone**.
@@ -103,7 +105,7 @@ More details: [SECURITY.md](SECURITY.md).
 
 - **"Refused to connect", "took too long to respond" or the page never opens?** Check *Before you start*: same Wi-Fi as the PC, not a guest network. Then make sure the Windows firewall allows CopyApp (Windows Security → Firewall & network protection → Allow an app through firewall → tick CopyApp). If your Wi-Fi is marked **Public** in Windows, either switch it to **Private** (Settings → Network & internet → Wi-Fi → your network) or tick **Public** for CopyApp. The CopyApp window has the same tips under **Can't open the page?**
 - **Pressed Ctrl+Alt+C and nothing happened?**
-  - You should hear a sound and see a green **✓ Sent to phone** box near the clock. No sound and no box: another program may have taken the shortcut; the CopyApp window shows the active shortcut under **Send the PC clipboard to the phone**, and its **Send PC clipboard to phone now** button always works.
+  - Check the active shortcut and last-send result in the CopyApp window. If the shortcut is unavailable, another program may have taken it; use **Send PC clipboard to phone now**. A clipboard-read failure has separate feedback.
   - The box appeared but the phone shows nothing: keep CopyApp open on the phone (the dot at the top says **Connected**).
   - The log file has one line per attempt (never the clipboard content): `%APPDATA%\CopyApp\copyapp.log`. Its path is also shown at the bottom of the CopyApp window.
 - **Stuck on "not private" with no Advanced button?** Open the link in **Chrome**.

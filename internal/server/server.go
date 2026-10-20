@@ -40,6 +40,7 @@ import (
 	"time"
 
 	"github.com/igalgerman/copyapp/internal/auth"
+	"github.com/igalgerman/copyapp/internal/diagnostics"
 	"github.com/igalgerman/copyapp/internal/i18n"
 	"github.com/igalgerman/copyapp/internal/secret"
 	"github.com/igalgerman/copyapp/internal/settings"
@@ -98,7 +99,8 @@ type Config struct {
 	Autostart    func() bool
 	SetAutostart func(on bool) error
 	LogPath      string
-	Hotkey       func() string // the active "send clipboard" shortcut
+	Hotkey       func() string              // the active "send clipboard" shortcut
+	SendStatus   func() ClipboardSendStatus // last PC clipboard attempt; optional
 	// SendClipboard sends the PC clipboard to the phone (control window
 	// button); source names the trigger for the log. It returns "sent",
 	// "empty", "secret" or "failed".
@@ -168,7 +170,10 @@ func New(cfg Config) *Server {
 	mux := http.NewServeMux()
 	mux.Handle("GET /", staticHandler(static))
 	mux.HandleFunc("GET /pair", s.pair)
+	mux.HandleFunc("POST /companion/pair", sameSite(s.companionPair))
+	mux.HandleFunc("POST /companion/send", sameSite(s.companionSend))
 	mux.HandleFunc("GET /ca.crt", s.caCert)
+	mux.HandleFunc("GET /diagnostics/config", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, diagnostics.BrowserConfig()) })
 	mux.HandleFunc("GET /status", s.requireAuth(s.status))
 	mux.HandleFunc("POST /send", sameSite(s.requireAuth(s.send)))
 	mux.HandleFunc("POST /share", sameSite(s.requireAuth(s.send))) // share target fallback when sw.js is absent
@@ -186,7 +191,7 @@ func New(cfg Config) *Server {
 	mux.HandleFunc("POST /local/repair", s.localOnly(localPost(s.localRepair)))
 	mux.HandleFunc("POST /local/uninstall", s.localOnly(localPost(s.localUninstall)))
 	mux.HandleFunc("POST /local/send-clipboard", s.localOnly(localPost(s.localSendClipboard)))
-	s.handler = s.logged(securityHeaders(privateOnly(mux)))
+	s.handler = s.logged(securityHeaders(privateOnly(mux), diagnostics.IngestionOrigin()))
 	return s
 }
 
@@ -204,7 +209,7 @@ func (s *Server) StartPairing() string {
 }
 
 func (s *Server) pairURL(tok string) string {
-	return strings.TrimRight(s.cfg.BaseURL(), "/") + "/pair?t=" + tok
+	return strings.TrimRight(s.cfg.BaseURL(), "/") + "/pair?t=" + tok + "#ca=" + base64.RawURLEncoding.EncodeToString(s.cfg.CAPEM)
 }
 
 // Publish adds an item to the outbox and pushes it to connected phones.
@@ -304,6 +309,24 @@ func (s *Server) logged(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sw := &statusWriter{ResponseWriter: w}
 		next.ServeHTTP(sw, r)
+		action := ""
+		switch r.URL.Path {
+		case "/pair":
+			action = "pairing"
+		case "/send", "/share", "/companion/send":
+			action = "transfer"
+		case "/companion/pair":
+			action = "companion_pairing"
+		case "/events":
+			action = "sse"
+		}
+		if action != "" {
+			code := sw.code
+			if code == 0 {
+				code = http.StatusOK
+			}
+			diagnostics.Emit(action, "http_result", fmt.Sprintf("http_%d", code), r.Header.Get("X-CopyApp-Operation"))
+		}
 		s.cfg.Logf("%s %s %d", r.Method, r.URL.Path, sw.code)
 	})
 }
@@ -312,13 +335,20 @@ const shellCSP = "default-src 'self'; img-src 'self' blob: data:; media-src 'sel
 	"style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; " +
 	"object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
 
-func securityHeaders(next http.Handler) http.Handler {
+func securityHeaders(next http.Handler, ingestionOrigins ...string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("X-Frame-Options", "DENY")
-		h.Set("Content-Security-Policy", shellCSP)
+		csp := shellCSP
+		for _, origin := range ingestionOrigins {
+			if origin != "" {
+				csp = strings.Replace(csp, "connect-src 'self'", "connect-src 'self' "+origin, 1)
+				break
+			}
+		}
+		h.Set("Content-Security-Policy", csp)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -610,6 +640,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		"paired": true, "fingerprint": fingerprint(s.cfg.CAPEM), "shortFingerprint": tlsutil.ShortFingerprint(s.cfg.CAPEM),
 		// What the PC does with items sent with mode=auto, and the per-item limit.
 		"receiveMode": set.ReceiveMode, "maxBytes": set.MaxBytes,
+		"supportId": diagnostics.SupportID(), "version": s.cfg.Version,
 	})
 }
 

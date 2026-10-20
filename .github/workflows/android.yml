@@ -1,0 +1,214 @@
+name: Android companion
+on:
+  pull_request:
+  push:
+    branches: [master]
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Build installable development APK
+        working-directory: android
+        env:
+          COPYAPP_VERSION: ${{ github.ref_name }}
+          COPYAPP_ANDROID_VERSION_CODE: ${{ github.run_number }}
+        run: gradle --no-daemon :app:assembleDebug :app:lintDebug
+      - name: Verify release refuses missing signing configuration
+        timeout-minutes: 5
+        working-directory: android
+        run: |
+          report="$RUNNER_TEMP/copyapp-unsigned-release.log"
+          if gradle --no-daemon :app:assembleRelease > "$report" 2>&1; then
+            echo 'An unsigned release unexpectedly built successfully.' >&2
+            exit 1
+          fi
+          if ! grep -Fq 'Release signing is not configured.' "$report"; then
+            cat "$report"
+            echo 'Release failed for an unexpected reason.' >&2
+            exit 1
+          fi
+      - name: Prepare ephemeral CI test signing configuration
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, secrets
+          password = secrets.token_urlsafe(40)
+          print('::add-mask::' + password)
+          key = pathlib.Path(os.environ['RUNNER_TEMP']) / 'copyapp-ci-test-only.p12'
+          values = {
+              'COPYAPP_ANDROID_KEYSTORE_PATH': str(key),
+              'COPYAPP_ANDROID_KEYSTORE_PASSWORD': password,
+              'COPYAPP_ANDROID_KEY_ALIAS': 'ci-test-not-for-distribution',
+              'COPYAPP_ANDROID_KEY_PASSWORD': password,
+          }
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              for name, value in values.items():
+                  output.write(name + '=' + value + '\n')
+          PY
+      - name: Smoke-test real release signing with throwaway key
+        timeout-minutes: 10
+        working-directory: android
+        run: |
+          umask 077
+          keytool -genkeypair -noprompt -keystore "$COPYAPP_ANDROID_KEYSTORE_PATH" -storetype PKCS12 \
+            -alias "$COPYAPP_ANDROID_KEY_ALIAS" -keyalg RSA -keysize 3072 -validity 2 \
+            -dname 'CN=CI TEST NOT FOR DISTRIBUTION' \
+            -storepass:env COPYAPP_ANDROID_KEYSTORE_PASSWORD -keypass:env COPYAPP_ANDROID_KEY_PASSWORD
+          gradle --no-daemon :app:assembleRelease :app:lintRelease
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+      - name: Remove test signing key and test release outputs
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/copyapp-ci-test-only.p12" "$RUNNER_TEMP/copyapp-unsigned-release.log"
+          rm -rf android/app/build/outputs/apk/release android/app/build/outputs/bundle/release
+          # This key is intentionally ephemeral. Only the debug APK below is
+          # an artifact; no test-signed release APK may be distributed.
+          for name in COPYAPP_ANDROID_KEYSTORE_PATH COPYAPP_ANDROID_KEYSTORE_PASSWORD COPYAPP_ANDROID_KEY_ALIAS COPYAPP_ANDROID_KEY_PASSWORD; do
+            printf '%s=\n' "$name" >> "$GITHUB_ENV"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CopyApp-Android-development
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+  signed-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Validate version and prepare private signing key
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          COPYAPP_ANDROID_KEYSTORE_BASE64: ${{ secrets.COPYAPP_ANDROID_KEYSTORE_BASE64 }}
+          COPYAPP_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.COPYAPP_ANDROID_KEYSTORE_PASSWORD }}
+          COPYAPP_ANDROID_KEY_ALIAS: ${{ secrets.COPYAPP_ANDROID_KEY_ALIAS }}
+          COPYAPP_ANDROID_KEY_PASSWORD: ${{ secrets.COPYAPP_ANDROID_KEY_PASSWORD }}
+          COPYAPP_ANDROID_CERT_SHA256: ${{ vars.COPYAPP_ANDROID_CERT_SHA256 }}
+        run: |
+          python3 - <<'PY'
+          import base64, os, pathlib, re
+          required = ('COPYAPP_ANDROID_KEYSTORE_BASE64', 'COPYAPP_ANDROID_KEYSTORE_PASSWORD', 'COPYAPP_ANDROID_KEY_ALIAS', 'COPYAPP_ANDROID_KEY_PASSWORD', 'COPYAPP_ANDROID_CERT_SHA256')
+          missing = [name for name in required if not os.environ.get(name)]
+          if missing:
+              raise SystemExit('Release signing setup is incomplete: ' + ', '.join(missing) + '. See docs/ANDROID.md. No APK will be published.')
+          tag = os.environ['RELEASE_TAG']
+          if not re.fullmatch(r'v\d+\.\d+\.\d+', tag):
+              raise SystemExit('Release tags must match Windows vMAJOR.MINOR.PATCH versions.')
+          fingerprint = re.sub(r'[:\s]', '', os.environ['COPYAPP_ANDROID_CERT_SHA256']).lower()
+          if not re.fullmatch(r'[0-9a-f]{64}', fingerprint):
+              raise SystemExit('COPYAPP_ANDROID_CERT_SHA256 must be the public SHA-256 signing certificate fingerprint.')
+          key = pathlib.Path(os.environ['RUNNER_TEMP']) / 'copyapp-signing.p12'
+          os.umask(0o077)
+          key.write_bytes(base64.b64decode(os.environ['COPYAPP_ANDROID_KEYSTORE_BASE64'], validate=True))
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('COPYAPP_ANDROID_KEYSTORE_PATH=' + str(key) + '\n')
+              output.write('COPYAPP_VERSION=' + tag[1:] + '\n')
+          PY
+      - name: Build and lint APK with owner signing key
+        working-directory: android
+        env:
+          COPYAPP_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.COPYAPP_ANDROID_KEYSTORE_PASSWORD }}
+          COPYAPP_ANDROID_KEY_ALIAS: ${{ secrets.COPYAPP_ANDROID_KEY_ALIAS }}
+          COPYAPP_ANDROID_KEY_PASSWORD: ${{ secrets.COPYAPP_ANDROID_KEY_PASSWORD }}
+          COPYAPP_ANDROID_VERSION_CODE: ${{ github.run_number }}
+        run: gradle --no-daemon :app:assembleRelease :app:lintRelease
+      - name: Verify signature and prepare release assets
+        env:
+          COPYAPP_ANDROID_CERT_SHA256: ${{ vars.COPYAPP_ANDROID_CERT_SHA256 }}
+        run: |
+          mkdir -p android-dist
+          cp android/app/build/outputs/apk/release/app-release.apk android-dist/CopyApp-Android.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android-dist/CopyApp-Android.apk > android-dist/Android-signing-certificate.txt
+          python3 - <<'PY'
+          import os, pathlib, re
+          report = pathlib.Path('android-dist/Android-signing-certificate.txt').read_text()
+          actual = re.search(r'Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]+)', report)
+          expected = re.sub(r'[:\s]', '', os.environ['COPYAPP_ANDROID_CERT_SHA256']).lower()
+          if not actual or actual.group(1).lower() != expected:
+              raise SystemExit('Signing certificate does not match the configured public fingerprint; refusing publication.')
+          PY
+          cd android-dist
+          sha256sum CopyApp-Android.apk > SHA256SUMS-Android.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CopyApp-Android-signed-${{ github.ref_name }}
+          path: android-dist/
+      - name: Remove private signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/copyapp-signing.p12"
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: signed-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: CopyApp-Android-signed-${{ github.ref_name }}
+          path: android-dist
+      - name: Attach APK to matching Windows release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          # Windows owns release creation. Creating it here would race the
+          # Windows workflow's preserve-existing-release rule and skip its EXE.
+          ready=false
+          for attempt in $(seq 1 20); do
+            if gh release view "$RELEASE_TAG" --json assets --jq 'any(.assets[]; .name == "copyapp.exe") and any(.assets[]; .name == "SHA256SUMS")' 2>/dev/null | grep -qx true; then
+              ready=true
+              break
+            fi
+            sleep 30
+          done
+          if [ "$ready" != true ]; then
+            echo 'Matching Windows release assets are not ready. Signed APK remains available as a workflow artifact; rerun this job after Windows release succeeds.' >&2
+            exit 1
+          fi
+          (cd android-dist && sha256sum --check SHA256SUMS-Android.txt)
+          # Recover a partially completed upload only when existing assets are
+          # byte-for-byte identical. Never use --clobber on verified assets.
+          for asset in CopyApp-Android.apk SHA256SUMS-Android.txt Android-signing-certificate.txt; do
+            if gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | grep -Fxq "$asset"; then
+              comparison=$(mktemp -d)
+              gh release download "$RELEASE_TAG" --pattern "$asset" --dir "$comparison"
+              if ! cmp -s "android-dist/$asset" "$comparison/$asset"; then
+                rm -rf "$comparison"
+                echo "Existing release asset differs: $asset. Use a new version tag; existing files were preserved." >&2
+                exit 1
+              fi
+              rm -rf "$comparison"
+            else
+              gh release upload "$RELEASE_TAG" "android-dist/$asset"
+            fi
+          done

@@ -1,0 +1,62 @@
+name: validate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build bundled browser diagnostics
+        run: |
+          npm ci --ignore-scripts
+          npm run build:diagnostics
+          npm run test:diagnostics
+          npm run test:site
+      - name: Vet and test
+        shell: pwsh
+        run: |
+          go mod download
+          if ($LASTEXITCODE) { exit 1 }
+          gofmt -w cmd internal
+          go vet -mod=readonly ./...
+          if ($LASTEXITCODE) { exit 1 }
+          go test -mod=readonly -count=1 ./...
+          if ($LASTEXITCODE) { exit 1 }
+      - name: Build Windows application
+        shell: pwsh
+        run: ./build.ps1 -Version 0.0.0
+      - name: Retain matching Windows development download
+        uses: actions/upload-artifact@v4
+        with:
+          name: CopyApp-Windows-development
+          path: |
+            dist/copyapp.exe
+            dist/SHA256SUMS
+      - name: Check dependency manifests and Go formatting
+        shell: pwsh
+        run: |
+          git add --intent-to-add package-lock.json
+          git diff --exit-code -- go.mod go.sum package-lock.json ':(glob)cmd/**/*.go' ':(glob)internal/**/*.go'
+      - name: Retain resolved manifests and Go formatting for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resolved-manifests-and-go-source
+          path: |
+            go.mod
+            go.sum
+            package-lock.json
+            cmd/**/*.go
+            internal/**/*.go

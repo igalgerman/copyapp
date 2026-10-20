@@ -29,6 +29,40 @@ All download/video links pin `https://github.com/igalgerman/copyapp/releases/dow
 
 The ignored `landing/` directory is a separate hosted deployment workspace and is not uploaded by Pages. For subsequent edits, use `site/` as the reviewed source and copy/package those files for the hosted deployment; do not assume changes to `landing/` reach GitHub Pages. Both deployments must retain the same versioned release URLs. The visible installation notes include the optional Android Share-menu setup and current limitations in Hebrew, English and Russian.
 
+## Android availability and tutorial versions
+
+The Android section separates the published **v1.0.2 browser/PWA flow** (text,
+photos and files in both directions) from the **development native companion**
+(text/URLs from the phone clipboard to Windows through a Quick Settings tile).
+The native companion needs the matching new Windows development build; the
+v1.0.2 EXE advertised by the main download buttons cannot pair with it. Keep
+that compatibility note visible until a verified compatible release replaces
+the download.
+
+The Android preview link opens its GitHub Actions workflow; select the latest
+successful build to find the
+`CopyApp-Android-development` artifact, not a stable APK download. A separate
+Windows link opens validation builds with `CopyApp-Windows-development`.
+GitHub sign-in and ZIP extraction may be required. Debug signing may change
+between builds, requiring reinstallation and re-pairing. Keep these workflow
+links durable; check successful build results and unexpired downloadable artifacts
+when directing a tester to a specific run.
+There is no stable signed APK release asset advertised here. The Android setup
+guide remains linked for compatibility and physical-device validation limits.
+
+The existing English `install.mp4` and `use.mp4` stay pinned to **v1.0.2**. The
+captions explain that they show local browser-test app footage and labeled OS
+illustrations, not the native companion. The four planned Hebrew physical-device
+tutorials have no download links until genuine recordings are finished and
+verified. Preserve the published older video assets when adding new ones.
+
+`node scripts/check-site.mjs` checks translation coverage, unique IDs, internal
+anchors, and the distinction between published release assets and development
+workflow links. It does not verify live hosting, Android hardware behavior or
+video playback. Publishing this tracked source through GitHub Pages updates the
+mirror; the canonical Sites deployment must be updated separately through its
+own source/hosting workflow.
+
 ## Preview locally
 
 Open `index.html` in a browser, or serve the folder:

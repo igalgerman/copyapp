@@ -304,6 +304,26 @@ html[dir=rtl] .steps-line{transform:scaleX(-1)}
   .step h3{margin-top:4px}
 }
 
+/* ---------- Android browser and companion options ---------- */
+.phone-path{margin-top:.85rem;font-size:.95rem;color:var(--muted);max-width:48ch}
+.phone-path a{text-decoration:underline;text-underline-offset:4px;text-decoration-color:var(--line)}
+.phone-path a:hover{text-decoration-color:currentColor}
+.android-options{background:var(--bg-2)}
+.android-options .section-lead{max-width:64ch}
+.android-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:clamp(18px,3vw,32px);margin-top:clamp(28px,4vw,44px)}
+.android-card{min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:18px;padding:clamp(24px,3vw,40px);border:1px solid var(--line);border-radius:28px;background:var(--surface);box-shadow:var(--shadow-md)}
+.android-card h3{font-size:clamp(1.45rem,2.3vw,1.85rem);line-height:1.2}
+.android-card p{color:var(--muted)}
+.option-badge{display:inline-block;padding:7px 12px;border-radius:100px;background:var(--cobalt-soft);color:var(--cobalt-ink);font-size:.82rem;font-weight:750;line-height:1.4}
+.option-preview{background:var(--butter);color:#151B33}
+.option-steps{margin:0;padding-inline-start:1.3em;display:grid;gap:12px;font-size:.98rem}
+.option-steps li{padding-inline-start:.25em}
+.option-steps li::marker{color:var(--cobalt-ink);font-weight:800}
+.android-card .option-note{font-size:.88rem;line-height:1.65;padding-block-start:16px;border-top:1px solid var(--line)}
+.option-link{margin-top:auto}
+.option-actions{display:flex;flex-wrap:wrap;gap:12px 24px;margin-top:auto;font-size:.95rem}
+@media (max-width:760px){.android-grid{grid-template-columns:1fr}.android-card{border-radius:22px}}
+
 /* ---------- Features (bento) ---------- */
 .features{background:linear-gradient(var(--bg),var(--bg-2))}
 .bento{margin-top:clamp(36px,5vw,60px);display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:clamp(12px,1.6vw,20px)}

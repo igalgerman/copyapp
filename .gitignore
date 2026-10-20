@@ -24,3 +24,9 @@ docs/HANDOFF.md
 *.tar.gz
 *.7z
 !site/**
+
+# Official browser diagnostics SDK is generated before packaging.
+node_modules/
+internal/server/web/diagnostics-sdk.js
+__pycache__/
+*.pyc

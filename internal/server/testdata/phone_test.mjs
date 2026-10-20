@@ -11,6 +11,7 @@ let destination = 'auto';
 let maxBytes = 2 * 1024 ** 3;
 const ctx = vm.createContext({
   FormData, Blob, File, URL, Number, Date, DOMException, AbortController,
+  diag: { emit() {}, operation() { return ""; }, support() {} },
   maxBytes, pref: () => destination, toast: (...args) => captures.push({ toast: args }),
   fmtSize: (n) => n + ' bytes',
   addOutgoing: (description) => ({ description }),

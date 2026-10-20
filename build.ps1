@@ -14,7 +14,8 @@ to this PC, for automated tests/recording without fresh LAN firewall prompts.
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.0.2',
     [switch]$Test,
-    [switch]$LoopbackTest
+    [switch]$LoopbackTest,
+    [ValidatePattern('^$|^https://[a-fA-F0-9]{16,64}@o[0-9]+\.ingest(?:\.(?:us|de))?\.sentry\.io/[0-9]+$')][string]$SentryDSN = $env:COPYAPP_SENTRY_DSN
 )
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
@@ -24,9 +25,16 @@ $env:GOOS = 'windows'; $env:GOARCH = 'amd64'; $env:CGO_ENABLED = '0'
 
 Push-Location $root
 try {
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { throw 'Node.js/npm is required to bundle browser diagnostics (https://nodejs.org/)' }
+    npm ci --ignore-scripts
+    if ($LASTEXITCODE) { throw 'npm ci failed' }
+    npm run build:diagnostics
+    if ($LASTEXITCODE) { throw 'Browser diagnostics bundle failed' }
+    go mod download
+    if ($LASTEXITCODE) { throw 'Go dependency resolution failed' }
     if ($Test) {
-        go vet ./...; if ($LASTEXITCODE) { throw 'go vet failed' }
-        go test -count=1 ./...; if ($LASTEXITCODE) { throw 'go test failed' }
+        go vet -mod=readonly ./...; if ($LASTEXITCODE) { throw 'go vet failed' }
+        go test -mod=readonly -count=1 ./...; if ($LASTEXITCODE) { throw 'go test failed' }
     }
     # Icon, version info and manifest -> cmd\copyapp\rsrc_windows_amd64.syso
     go run github.com/tc-hib/go-winres@v0.3.3 make --in cmd/copyapp/winres/winres.json --out cmd/copyapp/rsrc `
@@ -35,7 +43,9 @@ try {
     $destination = if ($LoopbackTest) { 'output\test-bin' } else { 'dist' }
     $buildTags = if ($LoopbackTest) { @('-tags', 'copyapp_test_loopback') } else { @() }
     New-Item -ItemType Directory -Force $destination | Out-Null
-    go build @buildTags -trimpath -ldflags "-H=windowsgui -s -w -X main.version=$Version" -o "$destination\copyapp.exe" ./cmd/copyapp
+    $linkFlags = "-H=windowsgui -s -w -X main.version=$Version"
+    if ($SentryDSN) { $linkFlags += " -X github.com/igalgerman/copyapp/internal/diagnostics.BuildDSN=$SentryDSN" }
+    go build @buildTags -mod=readonly -trimpath -ldflags $linkFlags -o "$destination\copyapp.exe" ./cmd/copyapp
     if ($LASTEXITCODE) { throw 'go build failed' }
     $exe = Get-Item "$destination\copyapp.exe"
     $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()

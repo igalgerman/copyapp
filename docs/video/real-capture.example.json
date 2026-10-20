@@ -1,0 +1,18 @@
+{
+  "release": "REPLACE_WITH_RECORDED_RELEASE_TAG",
+  "windows": "REPLACE_WITH_WINDOWS_VERSION",
+  "android": "REPLACE_WITH_PHYSICAL_PHONE_MODEL_AND_OS",
+  "flow": "windows-text",
+  "confirmed_real_capture": false,
+  "duration": 27,
+  "desktop": {"file": "raw/windows.mp4", "start": 3.0, "crop": null},
+  "phone": {"file": "raw/android.mp4", "start": 5.0, "crop": null},
+  "output": "windows-text.mp4",
+  "font": "Arial",
+  "captions": [
+    {"start": 0, "end": 5, "text": "במחשב: מסמנים טקסט ומעתיקים"},
+    {"start": 5, "end": 10, "text": "לוחצים על קיצור השליחה שמופיע במחשב"},
+    {"start": 10, "end": 17, "text": "הטקסט הגיע לטלפון"},
+    {"start": 17, "end": 27, "text": "מקישים על העתקה\nומדביקים במקום הרצוי"}
+  ]
+}

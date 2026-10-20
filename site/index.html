@@ -75,7 +75,7 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
           <span class="hl hl-1" data-i18n="title1">מהמחשב לטלפון.</span>
           <span class="hl hl-2" data-i18n="title2">ובחזרה.</span>
         </h1>
-        <p class="lead" data-i18n="lead">טקסט, תמונות וקבצים עוברים בין Windows לאנדרואיד בלחיצה אחת — דרך ה‑Wi‑Fi של הבית, בלי ענן ובלי חשבון.</p>
+        <p class="lead" data-i18n="lead">טקסט, תמונות וקבצים עוברים בין Windows לאנדרואיד דרך ה‑Wi‑Fi של הבית — בלי חשבון ובלי שרת תיווך.</p>
         <div class="cta-row">
           <a class="btn btn-primary btn-xl" href="https://github.com/igalgerman/copyapp/releases/download/v1.0.2/copyapp.exe">
             <svg class="dl-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11m-4.5-4.5L12 14.5 16.5 10M4.5 17.5v3h15v-3"/></svg>
@@ -87,6 +87,7 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
           </a>
         </div>
         <p class="spec" dir="ltr"><span>v1.0.2</span> · <span>Windows 10/11</span> · <span>Android · Chrome</span></p>
+        <p class="phone-path"><a href="#android" data-i18n="phonePath">בטלפון: מתחילים בדפדפן. יש גם אריח טקסט בגרסת פיתוח.</a></p>
       </div>
 
       <div class="stage-wrap" aria-hidden="true">
@@ -143,7 +144,7 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
   <section class="how section" id="how" aria-labelledby="how-title">
     <div class="wrap">
       <h2 class="section-title reveal" id="how-title" data-i18n="howTitle">שלושה צעדים. בערך דקה.</h2>
-      <p class="section-lead reveal" data-i18n="howLead">אין חשבון לפתוח, אין אפליקציה להוריד לטלפון ואין הגדרות רשת.</p>
+      <p class="section-lead reveal" data-i18n="howLead">מתחילים בדפדפן בטלפון, בלי חשבון ובלי התקנה. אריח שליחת הטקסט הוא תוספת נפרדת שבפיתוח.</p>
       <div class="steps-wrap">
       <svg class="steps-line" viewBox="0 0 1000 40" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M60 20 C 250 -10, 330 50, 500 20 S 760 -10, 940 20"/></svg>
       <ol class="steps">        <li class="step reveal">
@@ -168,7 +169,7 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
           </div>
           <span class="step-n">3</span>
           <h3 data-i18n="s3t">מעתיקים לשני הכיוונים</h3>
-          <p data-i18n="s3b">מהטלפון: שליחת הלוח, תמונה או קובץ. מהמחשב: <bdi class="combo"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd></bdi>, ומה שבלוח כבר בטלפון.</p>
+          <p data-i18n="s3b">מהטלפון: שליחת הלוח, תמונה או קובץ. מהמחשב: קיצור השליחה הפעיל או כפתור השליחה בחלון CopyApp. כשהתוכן מופיע בטלפון, מקישים על העתקה או שמירה לפי הצורך.</p>
         </li>
       </ol>
       </div>
@@ -181,6 +182,43 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
         <p data-i18n="knownTransfers">הורדות באנדרואיד משתמשות במנהל ההורדות של Chrome; הרשאות הדפדפן יכולות לחסום פעולות אוטומטיות. קבצים נשמרים בדרך כלל ב‑<bdi dir="ltr">Downloads\CopyApp</bdi>, ובמקרה של יעד לא בטוח בתיקייה המקומית <bdi dir="ltr">%LOCALAPPDATA%\CopyApp\Received</bdi>. חלון המחשב מציג את התיקייה בפועל.</p>
         <a class="text-link" href="https://github.com/igalgerman/copyapp/blob/v1.0.2/SECURITY.md" data-i18n="knownLink">אבטחה ומגבלות נוספות</a>
       </aside>
+    </div>
+  </section>
+
+  <!-- ANDROID OPTIONS: published browser flow and separate development preview -->
+  <section class="android-options section" id="android" aria-labelledby="android-title">
+    <div class="wrap">
+      <h2 class="section-title reveal" id="android-title" data-i18n="androidTitle">בוחרים איך לשלוח מהטלפון</h2>
+      <p class="section-lead reveal" data-i18n="androidLead">הדפדפן הוא המסלול הרגיל לכל סוגי התוכן. תוספת Android הניסיונית מיועדת לשליחת טקסט מהלוח.</p>
+      <div class="android-grid">
+        <article class="android-card reveal" aria-labelledby="browser-title">
+          <span class="option-badge" data-i18n="browserBadge">זמין עכשיו · 1.0.2</span>
+          <h3 id="browser-title" data-i18n="browserTitle">דפדפן ו‑PWA</h3>
+          <p data-i18n="browserBody">טקסט, תמונות וקבצים בשני הכיוונים. סורקים את הקוד במחשב ופותחים את CopyApp ב‑Chrome בטלפון, באותה רשת Wi‑Fi.</p>
+          <ol class="option-steps">
+            <li data-i18n="browserStep1">להתחלה אין צורך ב‑APK: משתמשים בדף שנפתח בטלפון.</li>
+            <li data-i18n="browserStep2">לשליחה למחשב: שליחת הלוח, תמונה או קובץ. לקבלה בטלפון: משאירים את הדף פתוח ומעתיקים או שומרים לפי הצורך.</li>
+            <li data-i18n="browserStep3">רוצים שיתוף מתוך גלריה או WhatsApp? התקנת ה‑PWA והאמון בתעודת המחשב מוסיפים יעד שיתוף, בהתאם לתמיכת הטלפון.</li>
+          </ol>
+          <a class="text-link option-link" href="#how" data-i18n="browserAction">להתחלה עם הדפדפן</a>
+        </article>
+        <article class="android-card android-preview reveal" aria-labelledby="companion-title">
+          <span class="option-badge option-preview" data-i18n="companionBadge">לניסוי · גרסת פיתוח</span>
+          <h3 id="companion-title" data-i18n="companionTitle">אריח Android לשליחת טקסט</h3>
+          <p data-i18n="companionBody">מעתיקים טקסט או קישור באפליקציה אחרת, פותחים את ההגדרות המהירות ומקישים על <bdi dir="ltr">CopyApp: Send to PC</bdi>. חלון קצר קורא את הלוח ושולח אותו למחשב.</p>
+          <ol class="option-steps">
+            <li data-i18n="companionStep1">דורש גם את גרסת Windows החדשה שבבדיקה; הורדת 1.0.2 שמוצעת כאן אינה כוללת צימוד ל‑APK.</li>
+            <li data-i18n="companionStep2">מצמדים פעם אחת בסריקת QR ומשווים את טביעת האצבע המלאה. לאחר מכן מוסיפים את האריח להגדרות המהירות.</li>
+            <li data-i18n="companionStep3">טקסט וקישורים בלבד, מהטלפון למחשב. לתמונות, קבצים והכיוון ההפוך משתמשים בדפדפן. אין מעקב אוטומטי אחרי הלוח.</li>
+          </ol>
+          <p class="option-note" data-i18n="companionNote">גרסת ניסוי בלבד: טרם נבדקה במכשיר Samsung פיזי, ואין עדיין APK יציב להורדה. קובץ הבדיקה ב‑GitHub עשוי לדרוש כניסה לחשבון וחילוץ ZIP. עדכון עשוי לדרוש התקנה מחדש וצימוד חוזר.</p>
+          <div class="option-actions">
+            <a class="text-link" href="https://github.com/igalgerman/copyapp/actions/workflows/android.yml" data-i18n="companionAction">בדיקות Android וקובץ APK לניסוי</a>
+            <a class="text-link" href="https://github.com/igalgerman/copyapp/actions/workflows/validate.yml" data-i18n="companionWindowsAction">בדיקות Windows וקובצי ניסוי</a>
+            <a class="text-link" href="https://github.com/igalgerman/copyapp/blob/master/docs/ANDROID.md" data-i18n="companionGuide">הוראות ותאימות לגרסת Windows</a>
+          </div>
+        </article>
+      </div>
     </div>
   </section>
 
@@ -206,7 +244,7 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
           <div class="demo demo-keys" aria-hidden="true" dir="ltr"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>C</kbd></div>
           <div class="tile-copy">
             <h3 data-i18n="f3t">קיצור מקשים אחד</h3>
-            <p data-i18n="f3b">מה שבלוח של המחשב — בטלפון. אם הצירוף תפוס, CopyApp משתמש ב‑<bdi>Ctrl+Alt+Shift+C</bdi>.</p>
+            <p data-i18n="f3b">ברירת המחדל היא <bdi>Ctrl+Alt+C</bdi>, והחלופה היא <bdi>Ctrl+Alt+Shift+C</bdi>. אפשר גם לשלוח מהחלון במחשב. בטלפון משאירים את CopyApp פתוח לקבלה.</p>
           </div>
         </article>
 
@@ -235,7 +273,7 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
           <div class="demo demo-lang" aria-hidden="true"><span class="word" lang="he" dir="rtl">שלום</span><span class="word" lang="en">Hello</span><span class="word" lang="ru">Привет</span></div>
           <div class="tile-copy">
             <h3 data-i18n="f5t">מדבר בשפה שלכם</h3>
-            <p data-i18n="f5b">המחשב והטלפון בעברית, באנגלית או ברוסית.</p>
+            <p data-i18n="f5b">ממשק Windows והדפדפן בעברית, באנגלית או ברוסית. תוספת Android הניסיונית באנגלית.</p>
           </div>
         </article>
 
@@ -251,7 +289,7 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
           <div class="demo demo-tiny" aria-hidden="true" dir="ltr"><span class="big">~<span class="cnt" data-to="11">0</span></span><span class="unit" data-i18n="unitMB">MB</span></div>
           <div class="tile-copy">
             <h3 data-i18n="f7t">קטן ופרטי</h3>
-            <p data-i18n="f7b">קובץ אחד. בלי פרסומות, בלי מעקב, בלי שרתים.</p>
+            <p data-i18n="f7b">קובץ Windows אחד. בלי פרסומות ובלי שרת תיווך להעברות.</p>
           </div>
         </article>
       </div>
@@ -275,7 +313,7 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
               <source src="https://github.com/igalgerman/copyapp/releases/download/v1.0.2/install.mp4" type="video/mp4">
             </video>
           </div>
-          <p class="vcap"><span data-i18n="v1cap">מהורדה ועד הצימוד הראשון: מפעילים, סורקים, מאשרים.</span> <a href="https://github.com/igalgerman/copyapp/releases/download/v1.0.2/install.mp4" data-i18n="vOpen">פתיחת הסרטון בחלון נפרד</a></p>
+          <p class="vcap"><span data-i18n="v1cap">גרסה 1.0.2 — הדרכת התקנה וחיבור בדפדפן.</span> <a href="https://github.com/igalgerman/copyapp/releases/download/v1.0.2/install.mp4" data-i18n="vOpen">פתיחת הסרטון בחלון נפרד</a></p>
         </div>
         <div class="panel" role="tabpanel" id="panel-use" aria-labelledby="tab-use" hidden>
           <div class="vbox">
@@ -284,10 +322,10 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
               <source src="https://github.com/igalgerman/copyapp/releases/download/v1.0.2/use.mp4" type="video/mp4">
             </video>
           </div>
-          <p class="vcap"><span data-i18n="v2cap">טקסט, תמונה וקובץ גדול — לשני הכיוונים, עם Ctrl+Alt+C.</span> <a href="https://github.com/igalgerman/copyapp/releases/download/v1.0.2/use.mp4" data-i18n="vOpen">פתיחת הסרטון בחלון נפרד</a></p>
+          <p class="vcap"><span data-i18n="v2cap">גרסה 1.0.2 — טקסט, תמונה וקובץ דרך המחשב והדפדפן בטלפון.</span> <a href="https://github.com/igalgerman/copyapp/releases/download/v1.0.2/use.mp4" data-i18n="vOpen">פתיחת הסרטון בחלון נפרד</a></p>
         </div>
       </div>
-      <p class="vnote reveal" data-i18n="vNote">הסרטונים מוקלטים באנגלית. האפליקציה עצמה מדברת גם עברית ורוסית.</p>
+      <p class="vnote reveal" data-i18n="vNote">ההדרכות באנגלית מציגות את מסלול הדפדפן בגרסה 1.0.2. חלק ממסכי Android ו‑Windows הם המחשות מסומנות; ה‑APK החדש אינו מוצג בהן. ארבע ההדרכות בעברית מצילום מכשירים אמיתיים עדיין אינן מוכנות.</p>
     </div>
   </section>
 
@@ -314,7 +352,7 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
       </div>
       <div class="trust-copy">
         <h2 class="section-title reveal" id="trust-title" data-i18n="secTitle">בנוי על אמון</h2>
-        <p class="section-lead reveal" data-i18n="secLead">CopyApp לא שולח דבר לאינטרנט. המחשב והטלפון מדברים ישירות, בתוך הרשת שלכם.</p>
+        <p class="section-lead reveal" data-i18n="secLead">המחשב והטלפון מעבירים תוכן ישירות בתוך הרשת שלכם. בגרסה שהוגדרה לכך, אירועי אבחון ללא תוכן נשלחים לשירות Sentry.</p>
         <ul class="sec-list">
           <li class="reveal"><h3 data-i18n="sec1t">התעבורה מוצפנת</h3><p data-i18n="sec1b">כל מה שעובר בין המחשב לטלפון מוצפן ב‑HTTPS, עם תעודה שנוצרת על המחשב שלכם.</p></li>
           <li class="reveal"><h3 data-i18n="sec2t">קוד צימוד חד‑פעמי</h3><p data-i18n="sec2b">קוד ה‑QR עובד פעם אחת בלבד ופג אחרי 10 דקות. רק הטלפון שסרק אותו מחובר.</p></li>
@@ -332,13 +370,13 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
       <h2 class="section-title reveal" id="faq-title" data-i18n="faqTitle">שאלות ששואלים אותנו</h2>
       <div class="acc">
         <details class="reveal"><summary><span data-i18n="q1">זה באמת בחינם?</span><i class="pm" aria-hidden="true"></i></summary><div class="ans"><p data-i18n="a1">כן. בלי מנוי, בלי פרסומות ובלי גרסת פרו. הקוד פתוח תחת רישיון MIT.</p></div></details>
-        <details class="reveal"><summary><span data-i18n="q2">צריך להתקין משהו בטלפון?</span><i class="pm" aria-hidden="true"></i></summary><div class="ans"><p data-i18n="a2">לא. סורקים את קוד ה‑QR ו‑CopyApp נפתח בדפדפן. רוצים אותו בתפריט השיתוף של אנדרואיד? בטלפון פותחים <b>⋯</b> ← <b>התקנה כאפליקציה</b>. לגמרי לא חובה.</p></div></details>
+        <details class="reveal"><summary><span data-i18n="q2">צריך להתקין משהו בטלפון?</span><i class="pm" aria-hidden="true"></i></summary><div class="ans"><p data-i18n="a2">לא לשימוש הרגיל: סורקים QR ופותחים בדפדפן. ה‑PWA מוסיף קיצור ויעד שיתוף לפי תמיכת המכשיר. אריח שליחת הטקסט הוא APK נפרד בגרסת פיתוח; הוא אינו נדרש להעברת תמונות וקבצים בדפדפן.</p></div></details>
         <details class="reveal"><summary><span data-i18n="q3">למה Windows או Chrome מציגים אזהרה?</span><i class="pm" aria-hidden="true"></i></summary><div class="ans"><p data-i18n="a3a">הקובץ עדיין לא חתום דיגיטלית, ולכן Windows עשוי להציג "Windows הגן על המחשב שלך". לוחצים <b>מידע נוסף ← הפעל בכל זאת</b>. אם חומת האש שואלת, לוחצים <b>אפשר</b>.</p><p data-i18n="a3b">בטלפון, Chrome מזהיר כי התעודה נוצרה במחשב. רק ברשת מהימנה שלכם אפשר להקיש <b>מתקדם ← המשך</b>. עקיפת האזהרה אינה מאמתת את זהות המחשב; לפני התקנת התעודה משווים את הקוד לזה שבמחשב.</p></div></details>
         <details class="reveal"><summary><span data-i18n="q4">זה עובד גם מחוץ ל‑Wi‑Fi של הבית?</span><i class="pm" aria-hidden="true"></i></summary><div class="ans"><p data-i18n="a4">לא, וזה בכוונה. המחשב והטלפון צריכים להיות באותה רשת Wi‑Fi. רשת אורחים או "בידוד לקוחות" בנתב חוסמים את החיבור, אז השתמשו ברשת הראשית.</p></div></details>
         <details class="reveal"><summary><span data-i18n="q5">ומה עם אייפון?</span><i class="pm" aria-hidden="true"></i></summary><div class="ans"><p data-i18n="a5">עדיין לא. CopyApp מיועד ל‑Windows 10/11 ולאנדרואיד עם Chrome. התקנת התעודה, ההתקנה כאפליקציה והשיתוף תלויים בטלפון ובדפדפן.</p></div></details>
         <details class="reveal"><summary><span data-i18n="q6">ומה עם קבצים גדולים?</span><i class="pm" aria-hidden="true"></i></summary><div class="ans"><p data-i18n="a6">עד 2 GB לקובץ כברירת מחדל, עם פס התקדמות. קבצים גדולים נכתבים ישר לדיסק ולא ממלאים את הזיכרון. את המגבלה משנים בחלון של CopyApp במחשב.</p></div></details>
         <details class="reveal"><summary><span data-i18n="q7">איך מסירים?</span><i class="pm" aria-hidden="true"></i></summary><div class="ans"><p data-i18n="a7">פותחים את חלון CopyApp — מקיצור הדרך או מהסמל ליד השעון — ובוחרים <b>הסרה</b>. קבצים שקיבלתם נשארים במקומם.</p></div></details>
-        <details class="reveal"><summary><span data-i18n="q8">זה בטוח? הקוד באמת פתוח?</span><i class="pm" aria-hidden="true"></i></summary><div class="ans"><p data-i18n="a8">כן. הקוד המלא ב‑GitHub, התעבורה מוצפנת, הצימוד חד‑פעמי ושום דבר לא יוצא מהרשת שלכם. רוצים לוודא שהקובץ מקורי? השוו את טביעת ה‑SHA‑256 שבעמוד הגרסה.</p></div></details>
+        <details class="reveal"><summary><span data-i18n="q8">זה בטוח? הקוד באמת פתוח?</span><i class="pm" aria-hidden="true"></i></summary><div class="ans"><p data-i18n="a8">הקוד המלא ב‑GitHub. התוכן עובר ב‑HTTPS ישירות ברשת המקומית, עם צימוד חד‑פעמי. בגרסאות שבהן הוגדר Sentry נשלחים אליו אירועי אבחון ללא תוכן הלוח והקבצים. משווים את תעודת המחשב בזמן הצימוד ואת טביעת ה‑SHA‑256 של ההורדה בעמוד הגרסה.</p></div></details>
       </div>
     </div>
   </section>
@@ -367,7 +405,7 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
 <footer class="site-footer">
   <div class="wrap foot">
     <div class="foot-brand"><a class="brand" href="#top" dir="ltr"><img src="assets/icon.svg" width="28" height="28" alt=""><span>CopyApp</span></a><p data-i18n="tagline">פחות שלבים. יותר חיבור.</p></div>
-    <p class="privacy" data-i18n="privacy">פרטיות: אנחנו לא אוספים כלום. באתר הזה אין אנליטיקס, עוגיות או מעקב.</p>
+    <p class="privacy" data-i18n="privacy">באתר הזה אין אנליטיקס, עוגיות או מעקב. העדפות השפה והעיצוב נשמרות בדפדפן שלכם.</p>
     <div class="foot-links">
       <a href="https://github.com/igalgerman/copyapp" data-i18n="source">קוד מקור</a>
       <a href="https://github.com/igalgerman/copyapp/releases/tag/v1.0.2" data-i18n="releases">גרסאות</a>
