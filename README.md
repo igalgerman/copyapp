@@ -4,7 +4,7 @@
 
 CopyApp lets you copy and paste between your Windows PC and your Android phone.
 
-Development work for issues #1–#4 is documented in [diagnostics](docs/DIAGNOSTICS.md), [Android companion](docs/ANDROID.md), [Windows hotkey verification](docs/HOTKEY-QA.md), and the [Hebrew real-device tutorial recording kit](docs/video/REAL-CAPTURE.he.md). Windows/Android builds pass CI; owner setup and physical-device validation remain required. The downloads below remain the previously published releases. Four new tutorial recordings are not yet available. The [updated website mirror](https://igalgerman.github.io/copyapp/) explains the browser/PWA and optional APK paths.
+CopyApp 1.0.3 adds an optional signed Android app (a Quick Settings tile that sends your clipboard to the PC) next to the browser flow, plus the **Ctrl+Alt+C** shortcut on Windows. The APK is signed but not yet tested on a physical phone. Details: [Android](docs/ANDROID.md), [diagnostics](docs/DIAGNOSTICS.md), [hotkey QA](docs/HOTKEY-QA.md). Short demo videos (illustrated, not real devices) are on the [website](https://igalgerman.github.io/copyapp/#easy).
 
 - Copy and paste **text**, **images**, and **files** between your PC and your phone.
 - Transfers work over **your own Wi-Fi**; clipboard contents and files stay on your local network. Builds configured for Sentry send content-free diagnostic events to that service.
@@ -18,7 +18,7 @@ Development work for issues #1–#4 is documented in [diagnostics](docs/DIAGNOST
 
 https://igalgerman.github.io/copyapp/
 
-or download the reviewed [CopyApp 1.0.2 executable](https://github.com/igalgerman/copyapp/releases/download/v1.0.2/copyapp.exe). The [1.0.2 release](https://github.com/igalgerman/copyapp/releases/tag/v1.0.2) includes `SHA256SUMS` to check the download.
+or download the [CopyApp 1.0.3 executable](https://github.com/igalgerman/copyapp/releases/download/v1.0.3/copyapp.exe) and, optionally, the [Android APK](https://github.com/igalgerman/copyapp/releases/download/v1.0.3/CopyApp-Android.apk). The [1.0.3 release](https://github.com/igalgerman/copyapp/releases/tag/v1.0.3) includes `SHA256SUMS` and `SHA256SUMS-Android.txt` to check the downloads.
 
 ---
 

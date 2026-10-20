@@ -62,7 +62,7 @@ function Pair-Phone {
     $null = Invoke-WebRequest "$L/pairing/open" -Method POST -Headers (@{ Origin=$L; 'X-CopyApp'=$lh.'X-CopyApp' }) -TimeoutSec 5
     Invoke-WebRequest "$L/qr" -Headers $lh -OutFile "$tmp\qr.png" -TimeoutSec 5 | Out-Null
     $pairUrl = & node "$PSScriptRoot\qr-decode.js" "$tmp\qr.png"
-    if ($LASTEXITCODE -or $pairUrl -notmatch '^https://[^/]+/pair\?t=[a-f0-9]{64}$') { throw 'QR decoding failed' }
+    if ($LASTEXITCODE -or $pairUrl -notmatch '^https://[^/]+/pair\?t=[a-f0-9]{64}(#fp=[a-f0-9]{64})?$') { throw 'QR decoding failed' }
     $script:B = ([uri]$pairUrl).GetLeftPart([UriPartial]::Authority)
     $null = Invoke-WebRequest $pairUrl -SkipCertificateCheck -SessionVariable phone -TimeoutSec 10
     $cookie = $phone.Cookies.GetAllCookies() | Where-Object Name -eq 'copyapp_session'
@@ -138,7 +138,7 @@ try {
         "$events" -match [regex]::Escape($marker)
     }
     $log = Get-Content -LiteralPath "$dd\copyapp.log" -Raw
-    Assert 'fallback failure, registration and actual keypress logged' ($log -match 'hotkey candidate 1 registration failed' -and $log -match 'hotkey registered: Ctrl\+Alt\+Shift\+C' -and $log -match 'hotkey pressed: Ctrl\+Alt\+Shift\+C')
+    Assert 'fallback failure, registration and actual keypress logged' ($log -match 'hotkey candidate=1 registration failed' -and $log -match 'hotkey registered: Ctrl\+Alt\+Shift\+C' -and $log -match 'hotkey received: Ctrl\+Alt\+Shift\+C')
     $null = Invoke-WebRequest "$L/local/quit" -Headers $lh -Method POST -TimeoutSec 5
     Wait-Until 'portable test process exits' { $portable.Refresh(); $portable.HasExited }
     [DesktopHotkeyProbe]::Stop(); $probeStarted = $false
