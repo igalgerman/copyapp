@@ -77,11 +77,7 @@ func Start(dir, version string, logf func(string, ...any)) (*Reporter, error) {
   Dsn: dsn, Release: "copyapp@"+version, Environment: "production",
   ServerName: "copyapp", SendDefaultPII: false, MaxBreadcrumbs: -1,
   HTTPClient: &http.Client{Timeout: 3*time.Second},
-  BeforeSend: func(e *sentry.Event, _ *sentry.EventHint) *sentry.Event {
-   e.Request = nil; e.User = sentry.User{}; e.Extra = nil; e.Breadcrumbs = nil; e.ServerName = "copyapp"
-   for i := range e.Exception { e.Exception[i].Value = "redacted" }
-   return e
-  },
+  BeforeSend: sanitizeEvent,
   BeforeSendLog: func(l *sentry.Log) *sentry.Log { delete(l.Attributes, "sentry.server.address"); return l },
  })
  if err != nil { r.dsn = ""; return r, errors.New("Sentry initialization failed") }
@@ -89,6 +85,22 @@ func Start(dir, version string, logf func(string, ...any)) (*Reporter, error) {
  r.logger = sentry.NewLogger(sentry.SetHubOnContext(context.Background(), r.hub))
  Emit("app", "launch", "ok", "")
  return r, startupErr
+}
+
+// sanitizeEvent uses the v0.50 Event schema: arbitrary extra values live in
+// Contexts; the older Event.Extra field no longer exists. Attachments and
+// thread metadata are unnecessary for our content-free crash marker.
+func sanitizeEvent(e *sentry.Event, _ *sentry.EventHint) *sentry.Event {
+ e.Request = nil
+ e.User = sentry.User{}
+ e.Contexts = nil
+ e.Breadcrumbs = nil
+ e.Attachments = nil
+ e.Threads = nil
+ e.DebugMeta = nil
+ e.ServerName = "copyapp"
+ for i := range e.Exception { e.Exception[i].Value = "redacted" }
+ return e
 }
 
 func SupportID() string { if r := current.Load(); r != nil { return r.id }; return "" }

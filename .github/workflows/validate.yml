@@ -2,8 +2,7 @@ name: validate
 
 on:
   pull_request:
-  push:
-    branches: ['work/**']
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -29,6 +28,7 @@ jobs:
         run: |
           go mod tidy
           if ($LASTEXITCODE) { exit 1 }
+          gofmt -w cmd internal
           go vet ./...
           if ($LASTEXITCODE) { exit 1 }
           go test -count=1 ./...
@@ -36,3 +36,14 @@ jobs:
       - name: Build Windows application
         shell: pwsh
         run: ./build.ps1 -Version 0.0.0
+      - name: Retain resolved manifests and Go formatting for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resolved-manifests-and-go-source
+          path: |
+            go.mod
+            go.sum
+            package-lock.json
+            cmd/**/*.go
+            internal/**/*.go
