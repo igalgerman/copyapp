@@ -581,3 +581,14 @@ details[open] .pm::after{transform:rotate(0)}
 .clip video{width:100%;border-radius:10px;display:block;background:#000}
 .clip figcaption{padding:10px 6px 4px;font-weight:650;font-size:.95rem}
 .issue-list{max-width:760px;margin:0 auto;padding-inline-start:1.2em;display:grid;gap:12px;line-height:1.55}
+
+.easy-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:20px;margin-bottom:24px}
+.easy-card{background:#fff;color:#10152A;border-radius:20px;padding:22px;box-shadow:0 6px 24px rgba(16,21,42,.12)}
+.easy-card h3{margin:0 0 10px}
+.easy-new{outline:3px solid #FFD23F}
+.keys{display:flex;gap:8px;align-items:center;justify-content:center;margin:12px 0;flex-wrap:wrap}
+.key{background:#10152A;color:#fff;border-radius:10px;padding:10px 18px;font:700 1.5rem Segoe UI,Arial,sans-serif;box-shadow:0 4px 0 #556}
+.key-wide{font-size:1.1rem}
+.easy-dl{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:center;margin:0 0 28px}
+.apk-qr{margin:0;text-align:center;font-size:.85rem}
+.apk-qr img{background:#fff;padding:6px;border-radius:10px;display:block;margin:0 auto 4px}
