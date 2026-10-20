@@ -68,6 +68,6 @@ attempt, source, result and elapsed time; Sentry uses a random operation ID.
 Windows automated checks: `go test ./internal/pc ./internal/server ./cmd/copyapp`
 and `go build ./cmd/copyapp`. New tests inject transient clipboard failures and
 channel closure/burst behavior; they do not verify Win32 registration or a
-physical keyboard. This environment has no Go toolchain, Windows session or
-Android device, so compilation and tests must run in Windows CI; issue #3 must
-remain open until the physical acceptance checks pass.
+physical keyboard. Windows CI passed `go vet ./...`, `go test -count=1 ./...`
+and the full executable build in [PR #5](https://github.com/igalgerman/copyapp/pull/5).
+Issue #3 must remain open until the physical acceptance checks pass.

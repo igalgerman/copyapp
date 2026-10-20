@@ -26,16 +26,16 @@ const SessionTTL = 180 * 24 * time.Hour
 const secretLen = 32 // bytes; 256-bit
 
 type Auth struct {
-	mu        sync.Mutex
-	token     string
-	openUntil time.Time
-	companion string
+	mu            sync.Mutex
+	token         string
+	openUntil     time.Time
+	companion     string
 	companionUsed time.Time
-	session   string
-	lastUsed  time.Time // last successful Valid (sliding expiry)
-	savedUse  time.Time // lastUsed as last written to path
-	path      string    // optional persistence file for the session
-	now       func() time.Time
+	session       string
+	lastUsed      time.Time // last successful Valid (sliding expiry)
+	savedUse      time.Time // lastUsed as last written to path
+	path          string    // optional persistence file for the session
+	now           func() time.Time
 }
 
 func New() *Auth { return &Auth{now: time.Now} }
@@ -200,7 +200,9 @@ func (a *Auth) Persist(path string) error {
 		}
 	}
 	s := f[0]
-	if s == "-" { return nil }
+	if s == "-" {
+		return nil
+	}
 	if _, err := hex.DecodeString(s); err != nil || len(s) != 2*secretLen {
 		return nil
 	}
@@ -236,8 +238,12 @@ func (a *Auth) saveLocked() error {
 		return errors.Join(markerErr, removeErr)
 	}
 	browser, companion := a.session, a.companion
-	if browser == "" { browser = "-" }
-	if companion == "" { companion = "-" }
+	if browser == "" {
+		browser = "-"
+	}
+	if companion == "" {
+		companion = "-"
+	}
 	err := writeAtomic(a.path, []byte(browser+" "+strconv.FormatInt(a.lastUsed.Unix(), 10)+" "+companion+" "+strconv.FormatInt(a.companionUsed.Unix(), 10)))
 	if err == nil {
 		a.savedUse = a.lastUsed

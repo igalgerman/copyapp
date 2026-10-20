@@ -15,11 +15,19 @@ func TestConsumeHotkeyReleasesAndClosedListener(t *testing.T) {
 	go func() { consumeHotkey(down, up, func() { sent <- struct{}{} }); close(done) }()
 	for i := 0; i < 20; i++ {
 		down <- hotkey.Event{}
-		select { case <-sent: case <-time.After(time.Second): t.Fatal("missed press", i) }
+		select {
+		case <-sent:
+		case <-time.After(time.Second):
+			t.Fatal("missed press", i)
+		}
 		up <- hotkey.Event{}
 	}
 	close(down)
-	select { case <-done: case <-time.After(time.Second): t.Fatal("closed listener did not return") }
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("closed listener did not return")
+	}
 }
 
 // Independent SDK queues can contain down1,up1,down2 simultaneously. Treating
@@ -33,5 +41,7 @@ func TestConsumeHotkeyBurstDoesNotLosePresses(t *testing.T) {
 	close(down)
 	count := 0
 	consumeHotkey(down, up, func() { count++ })
-	if count != 3 { t.Fatalf("burst triggered %d sends, want 3", count) }
+	if count != 3 {
+		t.Fatalf("burst triggered %d sends, want 3", count)
+	}
 }

@@ -1,8 +1,8 @@
 package server
 
 import (
- "github.com/igalgerman/copyapp/internal/diagnostics"
 	"encoding/json"
+	"github.com/igalgerman/copyapp/internal/diagnostics"
 	"io"
 	"net/http"
 	"os"
@@ -53,21 +53,21 @@ type phoneState struct {
 }
 
 type localState struct {
- SupportID string `json:"supportId"`
-	Pairing          pairState         `json:"pairing"`
-	Phone            phoneState        `json:"phone"`
-	WiFi             string            `json:"wifi"`
-	Address          string            `json:"address"`
-	Settings         settings.Settings `json:"settings"`
-	Autostart        bool              `json:"autostart"`
-	Transfers        []Transfer        `json:"transfers"`
-	SizeChoices      []int64           `json:"sizeChoices"`
-	LogPath          string            `json:"logPath"`
-	Hotkey           string            `json:"hotkey"`
- SendStatus ClipboardSendStatus `json:"sendStatus"`
-	Version          string            `json:"version"`
-	Fingerprint      string            `json:"fingerprint"`
-	ShortFingerprint string            `json:"shortFingerprint"`
+	SupportID        string              `json:"supportId"`
+	Pairing          pairState           `json:"pairing"`
+	Phone            phoneState          `json:"phone"`
+	WiFi             string              `json:"wifi"`
+	Address          string              `json:"address"`
+	Settings         settings.Settings   `json:"settings"`
+	Autostart        bool                `json:"autostart"`
+	Transfers        []Transfer          `json:"transfers"`
+	SizeChoices      []int64             `json:"sizeChoices"`
+	LogPath          string              `json:"logPath"`
+	Hotkey           string              `json:"hotkey"`
+	SendStatus       ClipboardSendStatus `json:"sendStatus"`
+	Version          string              `json:"version"`
+	Fingerprint      string              `json:"fingerprint"`
+	ShortFingerprint string              `json:"shortFingerprint"`
 }
 
 func (s *Server) phone() phoneState {
@@ -87,7 +87,7 @@ func (s *Server) phone() phoneState {
 
 func (s *Server) snapshot() localState {
 	st := localState{
-        SupportID: diagnostics.SupportID(),
+		SupportID:        diagnostics.SupportID(),
 		Pairing:          s.state(),
 		Phone:            s.phone(),
 		WiFi:             s.wifiName(),
@@ -107,7 +107,9 @@ func (s *Server) snapshot() localState {
 	if s.cfg.Hotkey != nil {
 		st.Hotkey = s.cfg.Hotkey()
 	}
-	if s.cfg.SendStatus != nil { st.SendStatus = s.cfg.SendStatus() }
+	if s.cfg.SendStatus != nil {
+		st.SendStatus = s.cfg.SendStatus()
+	}
 	return st
 }
 

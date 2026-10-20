@@ -15,19 +15,34 @@ func TestCompanionPairAndScopedSend(t *testing.T) {
 	browser, _ := e.a.Exchange(e.a.OpenPairing())
 	qr := e.s.StartPairing()
 	u, err := url.Parse(qr)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	fragment, _ := url.ParseQuery(u.Fragment)
 	ca, err := base64.RawURLEncoding.DecodeString(fragment.Get("ca"))
-	if err != nil || string(ca) != string(e.s.cfg.CAPEM) { t.Fatal("QR missing pinned certificate") }
+	if err != nil || string(ca) != string(e.s.cfg.CAPEM) {
+		t.Fatal("QR missing pinned certificate")
+	}
 	request := httptest.NewRequest("POST", "https://192.168.1.5:8443/companion/pair", strings.NewReader(`{"token":"`+u.Query().Get("t")+`"}`))
 	request.RemoteAddr = lanAddr
 	response := httptest.NewRecorder()
 	e.s.ServeHTTP(response, request)
-	if response.Code != 200 { t.Fatalf("pair: %d %s", response.Code, response.Body.String()) }
-	var result struct { Credential string `json:"credential"` }
-	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil { t.Fatal(err) }
-	if !e.a.Valid(browser) { t.Fatal("native pairing revoked browser") }
-	for _, tc := range []struct { path, credential string; want int }{
+	if response.Code != 200 {
+		t.Fatalf("pair: %d %s", response.Code, response.Body.String())
+	}
+	var result struct {
+		Credential string `json:"credential"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !e.a.Valid(browser) {
+		t.Fatal("native pairing revoked browser")
+	}
+	for _, tc := range []struct {
+		path, credential string
+		want             int
+	}{
 		{"/companion/send", result.Credential, 200},
 		{"/send", result.Credential, http.StatusUnauthorized},
 		{"/companion/send", browser, http.StatusUnauthorized},
@@ -39,8 +54,14 @@ func TestCompanionPairAndScopedSend(t *testing.T) {
 		r.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		e.s.ServeHTTP(w, r)
-		if w.Code != tc.want { t.Errorf("%s status %d want %d: %s", tc.path, w.Code, tc.want, w.Body.String()) }
+		if w.Code != tc.want {
+			t.Errorf("%s status %d want %d: %s", tc.path, w.Code, tc.want, w.Body.String())
+		}
 	}
-	if err := e.a.Revoke(); err != nil { t.Fatal(err) }
-	if e.a.ValidCompanion(result.Credential) { t.Fatal("unpair did not revoke companion") }
+	if err := e.a.Revoke(); err != nil {
+		t.Fatal(err)
+	}
+	if e.a.ValidCompanion(result.Credential) {
+		t.Fatal("unpair did not revoke companion")
+	}
 }

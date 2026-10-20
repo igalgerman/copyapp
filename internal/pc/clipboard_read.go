@@ -7,8 +7,8 @@ import (
 	"errors"
 	"time"
 
-	"golang.design/x/clipboard"
 	"github.com/igalgerman/copyapp/internal/store"
+	"golang.design/x/clipboard"
 )
 
 var ErrSensitiveClipboard = errors.New("pc: sensitive clipboard")
@@ -36,26 +36,36 @@ func readClipboard(c context.Context, sensitive func(context.Context) (bool, err
 		secret, err := sensitive(c)
 		if err != nil {
 			last = err
-			if errors.Is(err, clipboard.ErrUnavailable) { continue }
+			if errors.Is(err, clipboard.ErrUnavailable) {
+				continue
+			}
 			return store.Item{}, err // fail closed when secret status is unknown
 		}
-		if secret { return store.Item{}, ErrSensitiveClipboard }
+		if secret {
+			return store.Item{}, ErrSensitiveClipboard
+		}
 		img, err := read(c, clipboard.FmtImage)
 		if err == nil && len(img) > 0 {
 			return store.Item{Kind: "image", Name: "clipboard.png", Mime: "image/png", Data: img}, nil
 		}
 		if err != nil && !errors.Is(err, clipboard.ErrNoData) {
 			last = err
-			if errors.Is(err, clipboard.ErrUnavailable) { continue }
+			if errors.Is(err, clipboard.ErrUnavailable) {
+				continue
+			}
 			return store.Item{}, err
 		}
 		text, err := read(c, clipboard.FmtText)
 		if err == nil && len(text) > 0 {
 			return store.Item{Kind: "text", Name: "clipboard.txt", Mime: "text/plain; charset=utf-8", Data: text}, nil
 		}
-		if err == nil || errors.Is(err, clipboard.ErrNoData) { return store.Item{}, clipboard.ErrNoData }
+		if err == nil || errors.Is(err, clipboard.ErrNoData) {
+			return store.Item{}, clipboard.ErrNoData
+		}
 		last = err
-		if !errors.Is(err, clipboard.ErrUnavailable) { return store.Item{}, err }
+		if !errors.Is(err, clipboard.ErrUnavailable) {
+			return store.Item{}, err
+		}
 	}
 	return store.Item{}, last
 }

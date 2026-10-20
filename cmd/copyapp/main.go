@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"github.com/getlantern/systray"
-	"golang.design/x/hotkey"
 	"golang.design/x/clipboard"
+	"golang.design/x/hotkey"
 	"golang.org/x/sys/windows"
 
 	"github.com/igalgerman/copyapp/internal/applog"
@@ -93,7 +93,9 @@ func main() {
 	}
 
 	reporter, diagErr := diagnostics.Start(dataDir, version, log.Printf)
-	if diagErr != nil { log.Printf("diagnostics: initialization unavailable") }
+	if diagErr != nil {
+		log.Printf("diagnostics: initialization unavailable")
+	}
 	defer reporter.Close()
 	defer diagnostics.Recover()
 	i18n.Load(dataDir)
@@ -246,7 +248,7 @@ func main() {
 		OnSettings:    func(old, cur settings.Settings) { signalTrayRefresh() },
 		LogPath:       filepath.Join(dataDir, "copyapp.log"),
 		Hotkey:        func() string { return activeHotkey.Load().(string) },
-	SendStatus: clipboardStatus,
+		SendStatus:    clipboardStatus,
 		Version:       version,
 		SendClipboard: sendClipboard,
 		OnPaired:      func(string) { pc.Beep(true); flashTray(); signalTrayRefresh() },
@@ -462,7 +464,9 @@ func sendClipboard(source string) (result string) {
 	attempt := clipboardAttempt.Add(1)
 	started := time.Now()
 	log.Printf("clipboard attempt=%d operation=%s source=%s requested", attempt, operation, source)
-	if source == "hotkey" { diagnostics.Emit("hotkey", "received", "ok", operation) }
+	if source == "hotkey" {
+		diagnostics.Emit("hotkey", "received", "ok", operation)
+	}
 	diagnostics.Emit("clipboard", "requested", source, operation)
 	defer func() {
 		log.Printf("clipboard attempt=%d source=%s result=%s duration_ms=%d", attempt, source, result, time.Since(started).Milliseconds())
@@ -472,7 +476,9 @@ func sendClipboard(source string) (result string) {
 			lastClipboardStatus.Store(server.ClipboardSendStatus{At: time.Now(), Source: source, Result: result})
 		}
 	}()
-	if !sendMu.TryLock() { return "busy" }
+	if !sendMu.TryLock() {
+		return "busy"
+	}
 	defer sendMu.Unlock()
 	it, err := machine.ReadClipboard()
 	if errors.Is(err, pc.ErrSensitiveClipboard) {
@@ -500,7 +506,9 @@ func sendClipboard(source string) (result string) {
 	}
 	// Publish stores an outbox item and signals SSE; it is not a phone ACK.
 	result = "queued"
-	if srv.PhoneConnected() { result = "published" }
+	if srv.PhoneConnected() {
+		result = "published"
+	}
 	log.Printf("clipboard attempt=%d publish=%s kind=%s bytes=%d", attempt, result, it.Kind, len(it.Data))
 	pc.Beep(true)
 	pc.ShowSent(i18n.T("home.res."+result), i18n.Lang() == "he")
@@ -510,7 +518,9 @@ func sendClipboard(source string) (result string) {
 }
 
 func clipboardStatus() server.ClipboardSendStatus {
-	if v := lastClipboardStatus.Load(); v != nil { return v.(server.ClipboardSendStatus) }
+	if v := lastClipboardStatus.Load(); v != nil {
+		return v.(server.ClipboardSendStatus)
+	}
 	return server.ClipboardSendStatus{}
 }
 
@@ -529,19 +539,26 @@ func hotkeyLoop() {
 			}
 			selected = candidate
 			name = "Ctrl+Alt+C"
-			if i == 1 { name = "Ctrl+Alt+Shift+C" }
+			if i == 1 {
+				name = "Ctrl+Alt+Shift+C"
+			}
 			break
 		}
 		if selected == nil {
 			activeHotkey.Store("")
 			signalTrayRefresh()
-			if !warned { machine.Notify("CopyApp", i18n.T("hk.none")); warned = true }
+			if !warned {
+				machine.Notify("CopyApp", i18n.T("hk.none"))
+				warned = true
+			}
 		} else {
 			activeHotkey.Store(name)
 			signalTrayRefresh()
 			log.Printf("hotkey registered: %s", name)
 			diagnostics.Emit("hotkey", "registration", "registered", "")
-			if name != "Ctrl+Alt+C" && !warned { machine.Notify("CopyApp", i18n.T("hk.fallback", name)) }
+			if name != "Ctrl+Alt+C" && !warned {
+				machine.Notify("CopyApp", i18n.T("hk.fallback", name))
+			}
 			warned = false
 			registered := time.Now()
 			consumeHotkey(selected.Keydown(), selected.Keyup(), func() {
@@ -558,18 +575,27 @@ func hotkeyLoop() {
 			go func() { unregistered <- selected.Unregister() }()
 			select {
 			case err := <-unregistered:
-				if err != nil { log.Printf("hotkey unregister: %v", err) }
-			case <-time.After(2*time.Second):
+				if err != nil {
+					log.Printf("hotkey unregister: %v", err)
+				}
+			case <-time.After(2 * time.Second):
 				// The library cannot unregister if its internal message pump has died.
 				// Stop here rather than leak a new registration goroutine every retry.
 				log.Printf("hotkey cleanup timed out; restart CopyApp; manual send remains available")
 				machine.Notify("CopyApp", i18n.T("hk.restart"))
 				return
 			}
-			if time.Since(registered) > time.Minute { delay = time.Second }
+			if time.Since(registered) > time.Minute {
+				delay = time.Second
+			}
 		}
 		time.Sleep(delay)
-		if delay < 30*time.Second { delay *= 2; if delay > 30*time.Second { delay = 30*time.Second } }
+		if delay < 30*time.Second {
+			delay *= 2
+			if delay > 30*time.Second {
+				delay = 30 * time.Second
+			}
+		}
 	}
 }
 
@@ -580,10 +606,14 @@ func consumeHotkey(down, up <-chan hotkey.Event, send func()) {
 	for {
 		select {
 		case _, ok := <-down:
-			if !ok { return }
+			if !ok {
+				return
+			}
 			send()
 		case _, ok := <-up:
-			if !ok { return }
+			if !ok {
+				return
+			}
 		}
 	}
 }
@@ -743,7 +773,9 @@ func signalTrayRefresh() {
 
 func sentFeedback(kind string, size int64) string {
 	result := "queued"
-	if srv.PhoneConnected() { result = "published" }
+	if srv.PhoneConnected() {
+		result = "published"
+	}
 	log.Printf("outbox publish=%s kind=%s bytes=%d", result, kind, size)
 	pc.Beep(true)
 	pc.ShowSent(i18n.T("home.res."+result), i18n.Lang() == "he")

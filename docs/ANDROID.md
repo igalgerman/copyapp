@@ -23,8 +23,9 @@ Kotlin 2.1.20. It uploads `CopyApp-Android-development` containing an installabl
 gradle --no-daemon :app:assembleDebug :app:lintDebug
 ```
 
-No Android SDK/Gradle is available in the implementation environment, so this
-document does not claim the APK compiled or ran. Check the PR workflow result.
+The development APK compiled and passed Android lint in the
+[PR #5 workflow](https://github.com/igalgerman/copyapp/actions/runs/39414876777).
+It has not been installed or exercised on a physical phone.
 The development APK is not a published friend-facing release. Its CI-generated
 debug signing key is not stable across builds: uninstalling an older debug APK
 may be required, which also removes pairing. Before publishing an APK as a GitHub

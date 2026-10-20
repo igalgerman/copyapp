@@ -40,7 +40,7 @@ import (
 	"time"
 
 	"github.com/igalgerman/copyapp/internal/auth"
- "github.com/igalgerman/copyapp/internal/diagnostics"
+	"github.com/igalgerman/copyapp/internal/diagnostics"
 	"github.com/igalgerman/copyapp/internal/i18n"
 	"github.com/igalgerman/copyapp/internal/secret"
 	"github.com/igalgerman/copyapp/internal/settings"
@@ -99,7 +99,7 @@ type Config struct {
 	Autostart    func() bool
 	SetAutostart func(on bool) error
 	LogPath      string
-	Hotkey       func() string // the active "send clipboard" shortcut
+	Hotkey       func() string              // the active "send clipboard" shortcut
 	SendStatus   func() ClipboardSendStatus // last PC clipboard attempt; optional
 	// SendClipboard sends the PC clipboard to the phone (control window
 	// button); source names the trigger for the log. It returns "sent",
@@ -309,17 +309,24 @@ func (s *Server) logged(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sw := &statusWriter{ResponseWriter: w}
 		next.ServeHTTP(sw, r)
-        action := ""
-        switch r.URL.Path {
-        case "/pair": action = "pairing"
-        case "/send", "/share", "/companion/send": action = "transfer"
-        case "/companion/pair": action = "companion_pairing"
-        case "/events": action = "sse"
-        }
-        if action != "" {
-          code := sw.code; if code == 0 { code = http.StatusOK }
-          diagnostics.Emit(action, "http_result", fmt.Sprintf("http_%d", code), r.Header.Get("X-CopyApp-Operation"))
-        }
+		action := ""
+		switch r.URL.Path {
+		case "/pair":
+			action = "pairing"
+		case "/send", "/share", "/companion/send":
+			action = "transfer"
+		case "/companion/pair":
+			action = "companion_pairing"
+		case "/events":
+			action = "sse"
+		}
+		if action != "" {
+			code := sw.code
+			if code == 0 {
+				code = http.StatusOK
+			}
+			diagnostics.Emit(action, "http_result", fmt.Sprintf("http_%d", code), r.Header.Get("X-CopyApp-Operation"))
+		}
 		s.cfg.Logf("%s %s %d", r.Method, r.URL.Path, sw.code)
 	})
 }
@@ -335,10 +342,13 @@ func securityHeaders(next http.Handler, ingestionOrigins ...string) http.Handler
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("X-Frame-Options", "DENY")
 		csp := shellCSP
-        for _, origin := range ingestionOrigins {
-          if origin != "" { csp = strings.Replace(csp, "connect-src 'self'", "connect-src 'self' " + origin, 1); break }
-        }
-        h.Set("Content-Security-Policy", csp)
+		for _, origin := range ingestionOrigins {
+			if origin != "" {
+				csp = strings.Replace(csp, "connect-src 'self'", "connect-src 'self' "+origin, 1)
+				break
+			}
+		}
+		h.Set("Content-Security-Policy", csp)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -630,7 +640,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		"paired": true, "fingerprint": fingerprint(s.cfg.CAPEM), "shortFingerprint": tlsutil.ShortFingerprint(s.cfg.CAPEM),
 		// What the PC does with items sent with mode=auto, and the per-item limit.
 		"receiveMode": set.ReceiveMode, "maxBytes": set.MaxBytes,
-        "supportId": diagnostics.SupportID(), "version": s.cfg.Version,
+		"supportId": diagnostics.SupportID(), "version": s.cfg.Version,
 	})
 }
 

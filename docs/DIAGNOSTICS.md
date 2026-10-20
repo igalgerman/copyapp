@@ -92,10 +92,10 @@ Its source API was checked at that tag: logs are enabled automatically (the olde
 
 Real Sentry ingestion, two-device failure timelines, Windows crash behavior and
 physical-device/offline resource measurements remain unverified. This workspace
-has no configured DSN and no usable Go compiler or package-download network;
-SDK dependency resolution, checksum lock generation and compiled validation must
-run in CI/a working build environment. The four JavaScript privacy/rate/offline
-checks and existing phone/service-worker checks can run locally with Node.
+has no configured DSN. Windows CI resolved and bundled the official SDKs, passed
+`go vet ./...`, `go test -count=1 ./...` and built the executable in
+[PR #5](https://github.com/igalgerman/copyapp/pull/5). The four JavaScript
+privacy/rate/offline checks and existing phone/service-worker checks also pass.
 
 Do not assume that a free project is provisioned or that today's allowance is
 fixed. Before enabling releases, check the current Developer plan and your

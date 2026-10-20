@@ -10,16 +10,23 @@ import (
 func (a *Auth) ExchangeCompanion(token string) (string, bool, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if !a.openLocked() || !eq(token, a.token) { return "", false, nil }
+	if !a.openLocked() || !eq(token, a.token) {
+		return "", false, nil
+	}
 	a.token, a.openUntil = "", time.Time{}
 	old, used, saved := a.companion, a.companionUsed, a.savedUse
 	a.companion, a.companionUsed = randomHex(), a.now()
 	err := a.saveLocked()
 	if err == nil && a.path != "" {
 		err = os.Remove(a.path + ".revoked")
-		if os.IsNotExist(err) { err = nil }
+		if os.IsNotExist(err) {
+			err = nil
+		}
 	}
-	if err != nil { a.companion, a.companionUsed, a.savedUse = old, used, saved; return "", false, err }
+	if err != nil {
+		a.companion, a.companionUsed, a.savedUse = old, used, saved
+		return "", false, err
+	}
 	return a.companion, true, nil
 }
 
@@ -27,7 +34,9 @@ func (a *Auth) ExchangeCompanion(token string) (string, bool, error) {
 func (a *Auth) ValidCompanion(value string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if !eq(value, a.companion) { return false }
+	if !eq(value, a.companion) {
+		return false
+	}
 	now := a.now()
 	if now.Sub(a.companionUsed) > SessionTTL {
 		a.companion, a.companionUsed = "", time.Time{}
