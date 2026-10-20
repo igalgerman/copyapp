@@ -575,3 +575,9 @@ details[open] .pm::after{transform:rotate(0)}
 .release-notes h3 { margin: 0 0 10px; font-size: 1.1rem; }
 .release-notes h3:not(:first-child) { margin-block-start: 24px; }
 .release-notes p { margin: 0 0 14px; line-height: 1.65; }
+
+.clip-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px}
+.clip{margin:0;background:var(--night,#10152A);border-radius:16px;padding:10px;color:var(--on-night-muted,#cfd3ea)}
+.clip video{width:100%;border-radius:10px;display:block;background:#000}
+.clip figcaption{padding:10px 6px 4px;font-weight:650;font-size:.95rem}
+.issue-list{max-width:760px;margin:0 auto;padding-inline-start:1.2em;display:grid;gap:12px;line-height:1.55}

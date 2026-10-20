@@ -329,6 +329,60 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
     </div>
   </section>
 
+  <section class="clips section" id="clips" aria-labelledby="clips-title">
+    <div class="wrap">
+      <h2 class="section-title reveal" id="clips-title" data-i18n="clipsTitle">סרטונים קצרים לכל אפשרות</h2>
+      <div class="clip-grid reveal">
+        <figure class="clip">
+          <video controls playsinline preload="none" aria-labelledby="cl1-t"><source src="https://github.com/igalgerman/copyapp/releases/download/v1.0.2/install.mp4" type="video/mp4"></video>
+          <figcaption id="cl1-t" data-i18n="cl1">התקנה וחיבור (3 שלבים)</figcaption>
+        </figure>
+        <figure class="clip">
+          <video controls playsinline preload="none" aria-labelledby="cl2-t"><source src="https://github.com/igalgerman/copyapp/releases/download/v1.0.2/demo-copyapp-windows-to-android-text.mp4" type="video/mp4"></video>
+          <figcaption id="cl2-t" data-i18n="cl2">מחשב ← טלפון: טקסט (Ctrl+Alt+C או כפתור)</figcaption>
+        </figure>
+        <figure class="clip">
+          <video controls playsinline preload="none" aria-labelledby="cl3-t"><source src="https://github.com/igalgerman/copyapp/releases/download/v1.0.2/demo-copyapp-windows-to-android-file-image.mp4" type="video/mp4"></video>
+          <figcaption id="cl3-t" data-i18n="cl3">מחשב ← טלפון: קובץ או תמונה (שליחה אל)</figcaption>
+        </figure>
+        <figure class="clip">
+          <video controls playsinline preload="none" aria-labelledby="cl4-t"><source src="https://github.com/igalgerman/copyapp/releases/download/v1.0.2/demo-copyapp-android-to-windows-text.mp4" type="video/mp4"></video>
+          <figcaption id="cl4-t" data-i18n="cl4">טלפון ← מחשב: טקסט</figcaption>
+        </figure>
+        <figure class="clip">
+          <video controls playsinline preload="none" aria-labelledby="cl5-t"><source src="https://github.com/igalgerman/copyapp/releases/download/v1.0.2/demo-copyapp-android-to-windows-image.mp4" type="video/mp4"></video>
+          <figcaption id="cl5-t" data-i18n="cl5">טלפון ← מחשב: תמונה</figcaption>
+        </figure>
+        <figure class="clip">
+          <video controls playsinline preload="none" aria-labelledby="cl6-t"><source src="https://github.com/igalgerman/copyapp/releases/download/v1.0.2/demo-copyapp-android-share-menu.mp4" type="video/mp4"></video>
+          <figcaption id="cl6-t" data-i18n="cl6">אנדרואיד: שיתוף ל‑CopyApp מכל אפליקציה</figcaption>
+        </figure>
+        <figure class="clip">
+          <video controls playsinline preload="none" aria-labelledby="cl7-t"><source src="https://github.com/igalgerman/copyapp/releases/download/v1.0.2/demo-copyapp-pc-receive-settings.mp4" type="video/mp4"></video>
+          <figcaption id="cl7-t" data-i18n="cl7">במחשב: לאן מגיע מה שנשלח מהטלפון</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="issues section" id="known-issues" aria-labelledby="issues-title">
+    <div class="wrap">
+      <h2 class="section-title reveal" id="issues-title" data-i18n="issuesTitle">בעיות ידועות ומגבלות</h2>
+      <ul class="issue-list reveal">
+        <li data-i18n="is1">קובץ Windows אינו חתום: אם מופיע ״Windows protected your PC״ בוחרים More info ← Run anyway, ובחלון חומת האש בוחרים Allow.</li>
+        <li data-i18n="is2">הטלפון והמחשב חייבים להיות באותה רשת Wi‑Fi. רשת אורחים או בידוד מכשירים בנתב חוסמים את החיבור.</li>
+        <li data-i18n="is3">הדפדפן מזהיר ״החיבור אינו פרטי״ כי התעודה נוצרה במחשב שלכם. מקישים Advanced ← Proceed רק ברשת הביתית שלכם.</li>
+        <li data-i18n="is4">אם כתובת ה‑IP של המחשב משתנה, סורקים שוב את קוד ה‑QR. מומלץ לשמור כתובת קבועה בנתב.</li>
+        <li data-i18n="is5">דפדפן אינו יכול לקרוא את הלוח ברקע. בטלפון משתמשים בכפתור ״שליחת הלוח״; אם ההעתקה האוטומטית נחסמה, מקישים ״העתקה״ בכרטיס.</li>
+        <li data-i18n="is6">אם קיצור Ctrl+Alt+C תפוס באפליקציה אחרת, CopyApp משתמשת ב‑Ctrl+Alt+Shift+C ומציגה בחלון את הקיצור הפעיל. ״נשלח״ פירושו שהפריט פורסם לטלפון, לא שהועתק שם.</li>
+        <li data-i18n="is7">אין תמיכה באייפון.</li>
+        <li data-i18n="is8">ה‑APK עם אריח ההגדרות המהירות הוא תצוגת פיתוח: לא נבדק עדיין בטלפון אמיתי, ואינו מתחבר לקובץ Windows 1.0.2 שבהורדה.</li>
+        <li data-i18n="is9">הסרטונים כאן הם הקלטות הדגמה באנגלית עם מסכי Windows ו‑Android מאויירים (מסומנים בסרטון), לא צילום מכשירים אמיתיים.</li>
+      </ul>
+    </div>
+  </section>
+
+
   <!-- TRUST / SECURITY -->
   <section class="trust section" id="trust" aria-labelledby="trust-title">
     <div class="wrap trust-grid">

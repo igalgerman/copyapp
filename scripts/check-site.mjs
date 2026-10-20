@@ -36,7 +36,7 @@ for (const match of html.matchAll(/\b(?:href|src)="([^"]+)"/g)) {
   if (value.startsWith('#')) assert(ids.includes(value.slice(1)), `Broken local anchor: ${value}`);
   assert(!/\.apk(?:[?#]|$)/i.test(value), 'No published stable APK exists: link the development workflow, not a guessed APK');
   if (/releases\/download\//.test(value)) {
-    assert.match(value, /^https:\/\/github\.com\/igalgerman\/copyapp\/releases\/download\/v1\.0\.2\/(copyapp\.exe|install\.mp4|use\.mp4)$/, `Unverified release asset: ${value}`);
+    assert.match(value, /^https:\/\/github\.com\/igalgerman\/copyapp\/releases\/download\/v1\.0\.2\/(copyapp\.exe|install\.mp4|use\.mp4|demo-copyapp-[a-z-]+\.mp4)$/, `Unverified release asset: ${value}`);
   }
 }
 const expectedLinks = [
