@@ -280,7 +280,7 @@ function mkImage() { return path.join(RAW, 'sunset.png'); }
       const sent = pc.waitForResponse(r => new URL(r.url()).pathname === '/local/send-clipboard');
       await tap(pc, '#sendNow');
       const result = await (await sent).json();
-      if (result.result !== 'sent') throw new Error('Actual PC-window clipboard send failed: ' + result.result);
+      if (!['sent', 'queued', 'published'].includes(result.result)) throw new Error('Actual PC-window clipboard send failed: ' + result.result);
       await goPC(mocks.osdScene(null, pcText));
     } else {
       await goPC(mocks.notepad('Notes - Notepad', pcText, 'Copy it (Ctrl+C), then press ' + pcState.hotkey.split('+').map(k => '<span class="k">' + k + '</span>').join('+')));
