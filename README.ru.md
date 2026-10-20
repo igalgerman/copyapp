@@ -14,7 +14,7 @@ CopyApp позволяет копировать и вставлять между
 
 **Скачайте `copyapp.exe` с сайта CopyApp:**
 
-https://copyapp.igalg.chatgpt.site/
+https://igalgerman.github.io/copyapp/
 
 или скачайте проверенный [CopyApp 1.0.1](https://github.com/igalgerman/copyapp/releases/download/v1.0.1/copyapp.exe). [Страница версии 1.0.1](https://github.com/igalgerman/copyapp/releases/tag/v1.0.1) содержит `SHA256SUMS` для проверки загрузки.
 

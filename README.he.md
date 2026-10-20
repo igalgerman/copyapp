@@ -18,7 +18,7 @@ CopyApp מאפשר להעתיק ולהדביק בין מחשב Windows לטלפ�
 
 **הורידו את <code dir="ltr">copyapp.exe</code> מאתר CopyApp:**
 
-<bdi dir="ltr">https://copyapp.igalg.chatgpt.site/</bdi>
+<bdi dir="ltr">https://igalgerman.github.io/copyapp/</bdi>
 
 או הורידו את [קובץ CopyApp 1.0.1 שנבדק](https://github.com/igalgerman/copyapp/releases/download/v1.0.1/copyapp.exe). [עמוד גרסה 1.0.1](https://github.com/igalgerman/copyapp/releases/tag/v1.0.1) כולל קובץ <code dir="ltr">SHA256SUMS</code> לבדיקת ההורדה.
 

@@ -1,6 +1,6 @@
 # CopyApp website
 
-The tracked product site for CopyApp 1.0.2. The canonical public URL is https://copyapp.igalg.chatgpt.site/; GitHub Pages at https://igalgerman.github.io/copyapp/ is the tracked mirror.
+The tracked product site for CopyApp 1.0.2. The public URL is the GitHub Pages site at https://igalgerman.github.io/copyapp/.
 
 It is plain HTML, CSS and JavaScript with no build step. Fonts, styles and scripts are local; there are no analytics or trackers. Downloads and videos use the versioned GitHub release assets. Local asset links are relative, so the same files work at `/copyapp/`, at a domain root, and from disk (`file://`). The site remembers language/theme in `localStorage`.
 

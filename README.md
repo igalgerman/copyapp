@@ -1,6 +1,6 @@
 # CopyApp
 
-**[עברית](README.he.md) · [Русский](README.ru.md) · English · [Website](https://copyapp.igalg.chatgpt.site/)**
+**[עברית](README.he.md) · [Русский](README.ru.md) · English · [Website](https://igalgerman.github.io/copyapp/)**
 
 CopyApp lets you copy and paste between your Windows PC and your Android phone.
 
@@ -16,7 +16,7 @@ Development work for issues #1–#4 is documented in [diagnostics](docs/DIAGNOST
 
 **Download `copyapp.exe` from the CopyApp website:**
 
-https://copyapp.igalg.chatgpt.site/
+https://igalgerman.github.io/copyapp/
 
 or download the reviewed [CopyApp 1.0.2 executable](https://github.com/igalgerman/copyapp/releases/download/v1.0.2/copyapp.exe). The [1.0.2 release](https://github.com/igalgerman/copyapp/releases/tag/v1.0.2) includes `SHA256SUMS` to check the download.
 
