@@ -24,6 +24,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Build bundled browser diagnostics
+        run: |
+          npm install --ignore-scripts
+          npm run build:diagnostics
+          npm run test:diagnostics
 
       - name: Version from tag
         id: ver
@@ -36,12 +41,16 @@ jobs:
       - name: Vet and test
         shell: pwsh
         run: |
+          go mod tidy
+          if ($LASTEXITCODE) { exit 1 }
           go vet ./...
           if ($LASTEXITCODE) { exit 1 }
           go test -count=1 ./...
           if ($LASTEXITCODE) { exit 1 }
 
       - name: Build
+        env:
+          COPYAPP_SENTRY_DSN: ${{ vars.COPYAPP_SENTRY_DSN }}
         shell: pwsh
         run: ./build.ps1 -Version ${{ steps.ver.outputs.version }}
 

@@ -12,6 +12,8 @@ Only the latest release is supported.
 
 CopyApp moves clipboard items and files between **one Windows PC and one paired Android phone on the same local network**. The PC runs the local HTTPS server; no hosted relay, account or cloud is used for transfers.
 
+Builds may optionally configure hosted Sentry diagnostics. Windows and the running phone page then send bounded, content-free action/stage/result events directly over outbound HTTPS. Clipboard contents, files, pairing tokens and credentials are excluded. Diagnostics are disabled without a DSN and do not relay transfers. See [configuration and limitations](docs/DIAGNOSTICS.md).
+
 **What it protects against**
 
 - **Other devices on the LAN.** Transfer, status and disconnect routes require the session cookie issued by scanning the pairing QR code. Static phone app files are public on the LAN. The token-exchange route is reachable without a session but requires the 256-bit, single-use pairing token, valid for 10 minutes. The public CA certificate is available while pairing is open, or to the paired phone. Sessions expire after 180 days without use; requests from public (non-private) source IP addresses are refused. Unpairing and replacing an existing phone clear the old pending outbox.

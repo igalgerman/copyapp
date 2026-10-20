@@ -23,10 +23,12 @@ import (
 
 	"github.com/getlantern/systray"
 	"golang.design/x/hotkey"
+	"golang.design/x/clipboard"
 	"golang.org/x/sys/windows"
 
 	"github.com/igalgerman/copyapp/internal/applog"
 	"github.com/igalgerman/copyapp/internal/auth"
+	"github.com/igalgerman/copyapp/internal/diagnostics"
 	"github.com/igalgerman/copyapp/internal/i18n"
 	"github.com/igalgerman/copyapp/internal/install"
 	"github.com/igalgerman/copyapp/internal/pc"
@@ -49,6 +51,9 @@ const (
 
 // version is set at build time: -ldflags "-X main.version=1.0.0" (build.ps1).
 var version = "dev"
+
+var clipboardAttempt atomic.Uint64
+var lastClipboardStatus atomic.Value
 
 var (
 	quietStart    bool // started by Windows at sign-in (--autostart)
@@ -87,6 +92,10 @@ func main() {
 		defer lf.Close()
 	}
 
+	reporter, diagErr := diagnostics.Start(dataDir, version, log.Printf)
+	if diagErr != nil { log.Printf("diagnostics: initialization unavailable") }
+	defer reporter.Close()
+	defer diagnostics.Recover()
 	i18n.Load(dataDir)
 	settings.ExtraDenied = pc.AutorunFolders()
 	receiveDir := pc.ReceivedDir()
@@ -237,6 +246,7 @@ func main() {
 		OnSettings:    func(old, cur settings.Settings) { signalTrayRefresh() },
 		LogPath:       filepath.Join(dataDir, "copyapp.log"),
 		Hotkey:        func() string { return activeHotkey.Load().(string) },
+	SendStatus: clipboardStatus,
 		Version:       version,
 		SendClipboard: sendClipboard,
 		OnPaired:      func(string) { pc.Beep(true); flashTray(); signalTrayRefresh() },
@@ -432,8 +442,8 @@ func sendFile(path string) {
 		machine.Notify(i18n.T("toast.notSent"), publishErrText(err))
 		return
 	}
-	sentFeedback("file", fi.Size())
-	machine.Notify(i18n.T("toast.sent"), name)
+	result := sentFeedback("file", fi.Size())
+	machine.Notify(i18n.T("home.res."+result), name)
 }
 
 // humanSize formats a size limit ("500 MB", "2 GB").
@@ -445,72 +455,137 @@ func humanSize(n int64) string {
 }
 
 // sendClipboard publishes the PC clipboard to the phone. source ("hotkey",
-// "tray", "window") is only logged. It returns "sent", "empty", "secret",
-// "busy" or "failed". The log never contains the clipboard content.
-func sendClipboard(source string) string {
-	// Ignore repeat keys while a previous clipboard read is still in progress.
-	if !sendMu.TryLock() {
-		log.Printf("clipboard send (%s) ignored: previous send still running", source)
-		return "busy"
-	}
+// "tray", "window") is only logged. Results distinguish queued/published from
+// empty, sensitive, busy, read or publish failures. Logs exclude clipboard content.
+func sendClipboard(source string) (result string) {
+	operation := diagnostics.NewOperation()
+	attempt := clipboardAttempt.Add(1)
+	started := time.Now()
+	log.Printf("clipboard attempt=%d operation=%s source=%s requested", attempt, operation, source)
+	if source == "hotkey" { diagnostics.Emit("hotkey", "received", "ok", operation) }
+	diagnostics.Emit("clipboard", "requested", source, operation)
+	defer func() {
+		log.Printf("clipboard attempt=%d source=%s result=%s duration_ms=%d", attempt, source, result, time.Since(started).Milliseconds())
+		diagnostics.Emit("clipboard", "complete", result, operation)
+		// A busy trigger must not overwrite the status of an in-flight attempt.
+		if result != "busy" {
+			lastClipboardStatus.Store(server.ClipboardSendStatus{At: time.Now(), Source: source, Result: result})
+		}
+	}()
+	if !sendMu.TryLock() { return "busy" }
 	defer sendMu.Unlock()
-	log.Printf("clipboard send requested (%s)", source)
-	if machine.Sensitive() {
-		log.Printf("clipboard send blocked: sensitive clipboard")
+	it, err := machine.ReadClipboard()
+	if errors.Is(err, pc.ErrSensitiveClipboard) {
 		pc.Beep(false)
 		machine.Notify(i18n.T("toast.notSent"), i18n.T("toast.secret"))
 		return "secret"
 	}
-	var it store.Item
-	what := i18n.T("toast.clipText")
-	if img := machine.ReadImagePNG(); len(img) > 0 {
-		it = store.Item{Kind: "image", Name: "clipboard.png", Mime: "image/png", Data: img}
-		what = i18n.T("toast.clipImage")
-	} else if t := machine.ReadText(); t != "" {
-		it = store.Item{Kind: "text", Name: "clipboard.txt", Mime: "text/plain; charset=utf-8", Data: []byte(t)}
-	} else {
-		log.Printf("clipboard send skipped: no text or PNG")
+	if errors.Is(err, clipboard.ErrNoData) {
 		pc.Beep(false)
 		machine.Notify(i18n.T("toast.nothing"), i18n.T("toast.clipEmpty"))
 		return "empty"
 	}
+	if err != nil {
+		log.Printf("clipboard attempt=%d read failed: %v", attempt, err)
+		pc.Beep(false)
+		machine.Notify(i18n.T("toast.notSent"), i18n.T("home.res.readFailed"))
+		return "readFailed"
+	}
+	diagnostics.Emit("clipboard", "read", it.Kind, operation)
 	if _, err := srv.Publish(it); err != nil {
-		log.Printf("clipboard publish: %v", err)
+		log.Printf("clipboard attempt=%d publish failed: %v", attempt, err)
 		pc.Beep(false)
 		machine.Notify(i18n.T("toast.notSent"), publishErrText(err))
 		return "failed"
 	}
-	sentFeedback(it.Kind, int64(len(it.Data)))
-	machine.Notify(i18n.T("toast.sent"), what)
-	return "sent"
+	// Publish stores an outbox item and signals SSE; it is not a phone ACK.
+	result = "queued"
+	if srv.PhoneConnected() { result = "published" }
+	log.Printf("clipboard attempt=%d publish=%s kind=%s bytes=%d", attempt, result, it.Kind, len(it.Data))
+	pc.Beep(true)
+	pc.ShowSent(i18n.T("home.res."+result), i18n.Lang() == "he")
+	machine.Notify("CopyApp", i18n.T("home.res."+result))
+	flashTray()
+	return result
+}
+
+func clipboardStatus() server.ClipboardSendStatus {
+	if v := lastClipboardStatus.Load(); v != nil { return v.(server.ClipboardSendStatus) }
+	return server.ClipboardSendStatus{}
 }
 
 func hotkeyLoop() {
-	for i, mods := range [][]hotkey.Modifier{{hotkey.ModCtrl, hotkey.ModAlt}, {hotkey.ModCtrl, hotkey.ModAlt, hotkey.ModShift}} {
-		hk := hotkey.New(mods, hotkey.KeyC)
-		if err := hk.Register(); err != nil {
-			log.Printf("hotkey candidate %d registration failed: %v", i+1, err)
-			continue
+	delay := time.Second
+	warned := false
+	for {
+		var selected *hotkey.Hotkey
+		name := ""
+		for i, mods := range [][]hotkey.Modifier{{hotkey.ModCtrl, hotkey.ModAlt}, {hotkey.ModCtrl, hotkey.ModAlt, hotkey.ModShift}} {
+			candidate := hotkey.New(mods, hotkey.KeyC)
+			if err := candidate.Register(); err != nil {
+				log.Printf("hotkey candidate=%d registration failed: %v", i+1, err)
+				diagnostics.Emit("hotkey", "registration", "failed", "")
+				continue
+			}
+			selected = candidate
+			name = "Ctrl+Alt+C"
+			if i == 1 { name = "Ctrl+Alt+Shift+C" }
+			break
 		}
-		defer hk.Unregister()
-		name := "Ctrl+Alt+C"
-		if i == 1 {
-			name = "Ctrl+Alt+Shift+C"
+		if selected == nil {
+			activeHotkey.Store("")
+			signalTrayRefresh()
+			if !warned { machine.Notify("CopyApp", i18n.T("hk.none")); warned = true }
+		} else {
+			activeHotkey.Store(name)
+			signalTrayRefresh()
+			log.Printf("hotkey registered: %s", name)
+			diagnostics.Emit("hotkey", "registration", "registered", "")
+			if name != "Ctrl+Alt+C" && !warned { machine.Notify("CopyApp", i18n.T("hk.fallback", name)) }
+			warned = false
+			registered := time.Now()
+			consumeHotkey(selected.Keydown(), selected.Keyup(), func() {
+				log.Printf("hotkey received: %s", name)
+				go sendClipboard("hotkey")
+			})
+			activeHotkey.Store("")
+			signalTrayRefresh()
+			log.Printf("hotkey listener ended unexpectedly; re-registering")
+			diagnostics.Emit("hotkey", "listener", "closed", "")
+			// Unregister before trying again; no accumulating deferred registrations.
+			// The supported library owns its Windows registration/message thread.
+			unregistered := make(chan error, 1)
+			go func() { unregistered <- selected.Unregister() }()
+			select {
+			case err := <-unregistered:
+				if err != nil { log.Printf("hotkey unregister: %v", err) }
+			case <-time.After(2*time.Second):
+				// The library cannot unregister if its internal message pump has died.
+				// Stop here rather than leak a new registration goroutine every retry.
+				log.Printf("hotkey cleanup timed out; restart CopyApp; manual send remains available")
+				machine.Notify("CopyApp", i18n.T("hk.restart"))
+				return
+			}
+			if time.Since(registered) > time.Minute { delay = time.Second }
 		}
-		activeHotkey.Store(name)
-		log.Printf("hotkey registered: %s", name)
-		signalTrayRefresh()
-		if i == 1 {
-			pc.Info("CopyApp", i18n.T("hk.fallback", name), i18n.Lang() == "he")
-		}
-		for range hk.Keydown() {
-			log.Printf("hotkey pressed: %s", name)
-			go sendClipboard("hotkey")
-		}
-		return
+		time.Sleep(delay)
+		if delay < 30*time.Second { delay *= 2; if delay > 30*time.Second { delay = 30*time.Second } }
 	}
-	log.Printf("hotkey: no shortcut available; use the tray menu or the CopyApp window")
-	pc.Info("CopyApp", i18n.T("hk.none"), i18n.Lang() == "he")
+}
+
+// Drain both streams: the library queues Keyup indefinitely if never consumed.
+// The streams have independent queues, so their delivery order cannot be used
+// to infer physical held-key state or suppress a following legitimate press.
+func consumeHotkey(down, up <-chan hotkey.Event, send func()) {
+	for {
+		select {
+		case _, ok := <-down:
+			if !ok { return }
+			send()
+		case _, ok := <-up:
+			if !ok { return }
+		}
+	}
 }
 
 func startPairing() {
@@ -528,7 +603,7 @@ func onReady() {
 	systray.SetTitle("CopyApp")
 	mHome := systray.AddMenuItem("", "")
 	mPair := systray.AddMenuItem("", "")
-	mSend := systray.AddMenuItem("", "Ctrl+Alt+C")
+	mSend := systray.AddMenuItem("", "")
 	mFile := systray.AddMenuItem("", "")
 	mOpen := systray.AddMenuItem("", "")
 	systray.AddSeparator()
@@ -562,7 +637,7 @@ func onReady() {
 		}
 		hk := activeHotkey.Load().(string)
 		if hk == "" {
-			hk = "Ctrl+Alt+C"
+			hk = i18n.T("hk.unavailable")
 		}
 		systray.SetTooltip(i18n.T("tray.tooltip", hk))
 		mPair.SetTitle(i18n.T("tray.pair"))
@@ -666,11 +741,14 @@ func signalTrayRefresh() {
 	}
 }
 
-func sentFeedback(kind string, size int64) {
-	log.Printf("published to phone: kind=%s bytes=%d", kind, size)
+func sentFeedback(kind string, size int64) string {
+	result := "queued"
+	if srv.PhoneConnected() { result = "published" }
+	log.Printf("outbox publish=%s kind=%s bytes=%d", result, kind, size)
 	pc.Beep(true)
-	pc.ShowSent(i18n.T("osd.sent"), i18n.Lang() == "he")
+	pc.ShowSent(i18n.T("home.res."+result), i18n.Lang() == "he")
 	flashTray()
+	return result
 }
 
 // flashTray shows the tray icon with a green tick for a moment.

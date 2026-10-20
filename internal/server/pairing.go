@@ -326,7 +326,9 @@ footer bdi{font-family:Consolas,monospace;overflow-wrap:anywhere}
    <dd><span class="dot{{if .Snap.Phone.Paired}} on{{end}}" id="phoneDot"></span><span id="phoneState">{{if .Snap.Phone.Paired}}{{index .S "home.paired"}}{{else}}{{index .S "home.notPaired"}}{{end}}</span><span class="sub2" id="phoneSeen"></span></dd></div>
   <div><dt data-k="home.wifi">{{index .S "home.wifi"}}</dt><dd id="wifi">{{if .WiFi}}<bdi>{{.WiFi}}</bdi>{{else}}{{index .S "home.noWifi"}}{{end}}</dd></div>
   <div><dt data-k="home.address">{{index .S "home.address"}}</dt><dd><bdi dir="ltr" id="addr">{{.Snap.Address}}</bdi></dd></div>
-  <div><dt data-k="home.hotkey">{{index .S "home.hotkey"}}</dt><dd><kbd dir="ltr" id="hotkey">{{.Snap.Hotkey}}</kbd></dd></div>
+  <div><dt data-k="home.lastSend">{{index .S "home.lastSend"}}</dt><dd id="lastSend">—</dd></div>
+  <div><dt data-k="home.supportID">{{index .S "home.supportID"}}</dt><dd dir="ltr" id="supportID">{{.Snap.SupportID}}</dd></div>
+  <div><dt data-k="home.hotkey">{{index .S "home.hotkey"}}</dt><dd><kbd dir="ltr" id="hotkey">{{if .Snap.Hotkey}}{{.Snap.Hotkey}}{{else}}{{index .S "hk.unavailable"}}{{end}}</kbd></dd></div>
  </dl>
  <p class="note warnline" id="pairedFrom" hidden></p>
  <div class="statusbar">
@@ -495,7 +497,7 @@ footer bdi{font-family:Consolas,monospace;overflow-wrap:anywhere}
   if(s.phone.paired&&s.phone.pairedFrom){pf.textContent=fill('home.pairedFrom',{ip:s.phone.pairedFrom,t:new Date(s.phone.pairedAt).toLocaleString(lang,{dateStyle:'short',timeStyle:'short'})}); pf.hidden=false}else{pf.hidden=true}
   if(s.wifi){var bd=document.createElement('bdi');bd.textContent=s.wifi;$('wifi').replaceChildren(bd)}else{$('wifi').textContent=get('home.noWifi')}
   b.dataset.wifi=s.wifi||'';
-  $('addr').textContent=s.address; $('hotkey').textContent=s.hotkey; $('logPath').textContent=s.logPath;
+  $('addr').textContent=s.address; $('hotkey').textContent=s.hotkey||get('hk.unavailable'); $('supportID').textContent=s.supportId||''; var attempt=s.sendStatus; $('lastSend').textContent=attempt&&attempt.result?get('home.res.'+attempt.result)+' · '+new Date(attempt.at).toLocaleTimeString(lang):'—'; $('logPath').textContent=s.logPath;
   if(!busy){
    var st=s.settings;
    document.querySelectorAll('input[name=mode]').forEach(function(r){r.checked=r.value===st.receiveMode});
@@ -533,7 +535,7 @@ footer bdi{font-family:Consolas,monospace;overflow-wrap:anywhere}
   post('/local/choose-folder').then(function(r){if(r) $('saveDir').textContent=r.saveDir}).catch(failed).finally(function(){btn.disabled=false})});
  $('openDir').addEventListener('click',function(){post('/local/open-folder').catch(function(){})});
  $('sendNow').addEventListener('click',function(){var btn=this; btn.disabled=true;
-  post('/local/send-clipboard').then(function(r){var k='home.res.'+((r&&r.result)||'failed'); say(k,k!=='home.res.sent')}).catch(function(){say('home.res.failed',true)}).finally(function(){btn.disabled=false})});
+  post('/local/send-clipboard').then(function(r){var k='home.res.'+((r&&r.result)||'failed'); say(k,!['home.res.sent','home.res.published','home.res.queued'].includes(k))}).catch(function(){say('home.res.failed',true)}).finally(function(){btn.disabled=false})});
  $('repair').addEventListener('click',function(){if(!confirm(get('home.repairConfirm'))) return; post('/local/repair').then(function(){loadQR(); wasOpen=true}).catch(failed)});
  $('uninstall').addEventListener('click',function(){post('/local/uninstall').then(function(){$('unNote').classList.add('show')}).catch(function(){})});
  $('again').addEventListener('click',function(){

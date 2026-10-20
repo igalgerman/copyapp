@@ -3,6 +3,7 @@ module github.com/igalgerman/copyapp
 go 1.27.0
 
 require (
+	github.com/getsentry/sentry-go v0.50.0
 	github.com/getlantern/systray v1.2.2
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	golang.design/x/clipboard v0.11.0

@@ -1,6 +1,6 @@
 // Package auth implements one-phone pairing: a short-lived, single-use
 // pairing token is exchanged for a session id that the phone keeps as a
-// cookie. Only one session exists at a time.
+// cookie. A separately paired native companion has its own credential.
 package auth
 
 import (
@@ -29,6 +29,8 @@ type Auth struct {
 	mu        sync.Mutex
 	token     string
 	openUntil time.Time
+	companion string
+	companionUsed time.Time
 	session   string
 	lastUsed  time.Time // last successful Valid (sliding expiry)
 	savedUse  time.Time // lastUsed as last written to path
@@ -90,7 +92,8 @@ func (a *Auth) PairingDeadline() time.Time {
 }
 
 // Exchange consumes the token and returns a new session id, replacing any
-// older session. It fails if the token is wrong, used, or expired.
+// older browser session. The companion is preserved. It fails if the token
+// is wrong, used, or expired.
 func (a *Auth) Exchange(token string) (string, bool) {
 	sid, ok, _ := a.ExchangeWithError(token)
 	return sid, ok
@@ -144,18 +147,18 @@ func (a *Auth) Valid(cookie string) bool {
 	return true
 }
 
-// Paired reports whether a session exists.
+// Paired reports whether a browser or companion session exists.
 func (a *Auth) Paired() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.session != ""
+	return a.session != "" || a.companion != ""
 }
 
-// Revoke drops the session and any open pairing token (Re-pair).
+// Revoke drops both client credentials and any open pairing token (Re-pair).
 func (a *Auth) Revoke() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.token, a.session = "", ""
+	a.token, a.session, a.companion = "", "", ""
 	a.openUntil = time.Time{}
 	return a.saveLocked()
 }
@@ -167,6 +170,7 @@ func (a *Auth) Persist(path string) error {
 	defer a.mu.Unlock()
 	a.path = path
 	a.session, a.lastUsed, a.savedUse = "", time.Time{}, time.Time{}
+	a.companion, a.companionUsed = "", time.Time{}
 	// The tombstone takes precedence even if the old session file was locked
 	// when Unpair ran. Never restore a session whose revocation was committed.
 	if _, err := os.Stat(path + ".revoked"); err == nil {
@@ -181,12 +185,22 @@ func (a *Auth) Persist(path string) error {
 	if err != nil {
 		return err
 	}
-	// "SESSION" (older versions) or "SESSION LAST-USED-UNIX".
+	// Legacy "SESSION [LAST-USED-UNIX]", or the backward-compatible extension
+	// "BROWSER LAST-USED-UNIX COMPANION COMPANION-LAST-USED-UNIX". A missing
+	// browser is represented by "-" for companion-only installations.
 	f := strings.Fields(string(b))
 	if len(f) == 0 {
 		return nil
 	}
+	if len(f) >= 4 && len(f[2]) == 2*secretLen {
+		if _, err := hex.DecodeString(f[2]); err == nil {
+			if u, err := strconv.ParseInt(f[3], 10, 64); err == nil && u > 0 && a.now().Sub(time.Unix(u, 0)) <= SessionTTL {
+				a.companion, a.companionUsed = f[2], time.Unix(u, 0)
+			}
+		}
+	}
 	s := f[0]
+	if s == "-" { return nil }
 	if _, err := hex.DecodeString(s); err != nil || len(s) != 2*secretLen {
 		return nil
 	}
@@ -208,7 +222,7 @@ func (a *Auth) saveLocked() error {
 	if a.path == "" {
 		return nil
 	}
-	if a.session == "" {
+	if a.session == "" && a.companion == "" {
 		// Commit a tombstone before attempting deletion: Windows can refuse
 		// deletion of a read-only or open file while the directory is writable.
 		_, markerErr := os.Stat(a.path + ".revoked")
@@ -221,7 +235,10 @@ func (a *Auth) saveLocked() error {
 		}
 		return errors.Join(markerErr, removeErr)
 	}
-	err := writeAtomic(a.path, []byte(a.session+" "+strconv.FormatInt(a.lastUsed.Unix(), 10)))
+	browser, companion := a.session, a.companion
+	if browser == "" { browser = "-" }
+	if companion == "" { companion = "-" }
+	err := writeAtomic(a.path, []byte(browser+" "+strconv.FormatInt(a.lastUsed.Unix(), 10)+" "+companion+" "+strconv.FormatInt(a.companionUsed.Unix(), 10)))
 	if err == nil {
 		a.savedUse = a.lastUsed
 	}

@@ -91,7 +91,7 @@ ev = fire('fetch', new Request(origin + '/app.js'));
 await ev.responded;
 assert.equal(ev.waits.length, 1, 'cache.put must be inside e.waitUntil');
 await Promise.all(ev.waits);
-assert.equal(stores.get('copyapp-shell-v5').get('/app.js'), 'copy');
+assert.equal(stores.get('copyapp-shell-v6').get('/app.js'), 'copy');
 
 // 6. Activating a new worker keeps a pending share.
 stores.set('copyapp-shell-v0', new Map());

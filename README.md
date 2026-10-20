@@ -4,8 +4,10 @@
 
 CopyApp lets you copy and paste between your Windows PC and your Android phone.
 
+Development work for issues #1–#4 is documented in [diagnostics](docs/DIAGNOSTICS.md), [Android companion](docs/ANDROID.md), [Windows hotkey verification](docs/HOTKEY-QA.md), and the [Hebrew real-device tutorial recording kit](docs/video/REAL-CAPTURE.he.md). These changes require build and physical-device validation; the downloads below remain the previously published releases. Four new tutorial recordings are not yet available.
+
 - Copy and paste **text**, **images**, and **files** between your PC and your phone.
-- Works over **your own Wi-Fi**. Nothing is sent to the internet or to any cloud.
+- Transfers work over **your own Wi-Fi**; clipboard contents and files stay on your local network. Builds configured for Sentry send content-free diagnostic events to that service.
 - It is **free** and open source ([MIT license](LICENSE)).
 
 ---
@@ -89,7 +91,7 @@ To remove CopyApp, choose **Uninstall CopyApp…** in the CopyApp window or in t
 - All data sent between your PC and phone is **encrypted**.
 - The pairing QR code can be used **only once** and works for **10 minutes**.
 - When a phone pairs, the PC shows a notification with the phone's address, and the CopyApp window keeps showing it. If it was not you, choose **Unpair phone**.
-- CopyApp only talks on **your local network**. It does not open your PC to the internet.
+- Transfers use **your local network**. CopyApp does not open your PC to the internet. Optional Sentry diagnostics use outbound HTTPS; see [diagnostics setup and data](docs/DIAGNOSTICS.md).
 - Received files are saved to **Downloads\CopyApp** by default. If redirected Downloads is unsafe (for example, a network share), CopyApp uses `%LOCALAPPDATA%\CopyApp\Received`. The window shows the actual folder. Files are marked as "downloaded from the internet" where supported; executable files still need your judgment before opening.
 - Unpairing clears pending PC items; replacing the existing paired phone also clears its pending outbox. A failed phone-side disconnect is reported as a failure, so retry it when the PC is reachable.
 - You can **unpair at any time**: in the CopyApp window or the icon menu choose **Unpair phone**; on the phone choose **⋯ → Unpair this phone**.

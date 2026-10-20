@@ -1,6 +1,7 @@
 // CopyApp phone UI. Vanilla JS, no build step. Strings live in i18n.js.
 (() => {
   'use strict';
+  const diag = window.CopyAppDiagnostics || { emit() {}, operation() { return ''; }, support() {} };
 
   // The PC's per-transfer limit; /status reports the real one (maxBytes).
   let maxBytes = 2 * 1024 ** 3;
@@ -428,11 +429,13 @@
       const cb = navigator.clipboard;
       if (!cb || !cb.writeText) throw new Error('copy');
       const text = typeof item.text === 'string' ? item.text : await (await fetchItem(item)).text();
-      await cb.writeText(text); // no execCommand fallback: that one needs a tap
+      await cb.writeText(text);
+      diag.emit('clipboard', 'automatic_write', 'ok'); // no execCommand fallback: that one needs a tap
       if (btn) flashDone(btn);
       toast('ok', ['auto.copied'], null, 2500);
     } catch (e) {
       if (e && e.message === 'unauthorized') return;
+      diag.emit('clipboard', 'automatic_write', 'blocked');
       const card = $('.card', node);
       if (!$('.card-note', card)) card.append(el('p', { class: 'card-note', msg: ['auto.copyFail'] }));
     }
@@ -619,16 +622,20 @@
   }
 
   function transmit(entry, makeBody, contentType) {
+    const operation_id = diag.operation(), began = performance.now();
+    diag.emit('transfer', 'start', 'start', { operation_id });
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/send');
     xhr.responseType = 'json';
     xhr.setRequestHeader('Accept', 'application/json');
+    if (operation_id) xhr.setRequestHeader('X-CopyApp-Operation', operation_id);
     if (contentType) xhr.setRequestHeader('Content-Type', contentType);
     const update = showProgress(entry, xhr);
     xhr.upload.onprogress = (e) => { if (e.lengthComputable) update(e.loaded, e.total); };
     const retry = () => transmit(entry, makeBody, contentType);
     return new Promise((resolve) => {
       xhr.onload = () => {
+        diag.emit('transfer', 'http_result', xhr.status === 200 ? 'ok' : 'failed', { operation_id, http_status: xhr.status, duration_ms: performance.now() - began });
         const res = xhr.response || {};
         if (xhr.status === 200 && res.ok) {
           const [a, b] = whereMsgs(res.kind, res.where, res.saved);
@@ -651,6 +658,7 @@
         resolve(false);
       };
       xhr.onerror = () => {
+        diag.emit('transfer', 'network', 'failed', { operation_id });
         const [a, b] = errorText('network');
         showResult(entry, false, a, b, retry);
         toast('err', a, b);
@@ -658,6 +666,7 @@
         resolve(false);
       };
       xhr.onabort = () => {
+        diag.emit('transfer', 'cancel', 'canceled', { operation_id });
         showResult(entry, false, ['canceled'], null, retry, true);
         resolve(false);
       };
@@ -717,10 +726,10 @@
     sendBtn.classList.add('is-busy');
     try {
       const got = await readClipboard();
-      if (got === null) { openSheet('sheet-paste', true); return; }
+      if (got === null) { diag.emit('clipboard', 'read', 'blocked'); openSheet('sheet-paste', true); return; }
       let sent;
       if (got instanceof Blob) { sent = await sendClipboardImage(got); }
-      else if (!got.trim()) { toast('err', ...errorText('empty')); return; }
+      else if (!got.trim()) { diag.emit('clipboard', 'read', 'empty'); toast('err', ...errorText('empty')); return; }
       else { sent = await sendText(got); }
       if (!sent) return;
       sendBtn.classList.remove('is-sent'); void sendBtn.offsetWidth; sendBtn.classList.add('is-sent');
@@ -886,6 +895,7 @@
       if (r.status === 401) return 'unpaired';
       if (!r.ok) return 'down';
       const j = await r.json();
+      diag.support(j.supportId);
       if (j.fingerprint) $('#fingerprint').textContent = formatFingerprint(j.fingerprint);
       if (j.shortFingerprint && !shortFp) showShortFp(j.shortFingerprint);
       if (Number.isSafeInteger(j.maxBytes) && j.maxBytes > 0) maxBytes = j.maxBytes;
@@ -933,16 +943,18 @@
     setConn('connecting');
     es = new EventSource('/events');
     es.addEventListener('open', () => {
+      diag.emit('sse', 'open', 'ok');
       attempt = 0;
       streamOpenedAt = Date.now();
       setConn('online');
       hideBanner();
     });
     es.addEventListener('item', (ev) => {
-      try { addReceived(JSON.parse(ev.data)); } catch { /* ignore malformed */ }
+      try { addReceived(JSON.parse(ev.data)); diag.emit('transfer', 'display', 'ok'); } catch { /* ignore malformed */ }
     });
     es.addEventListener('ready', () => { initialSyncDone = true; });
     es.addEventListener('error', async () => {
+      diag.emit('sse', 'disconnect', 'failed');
       closeStream();
       streamOpenedAt = 0;
       const s = await checkStatus();
