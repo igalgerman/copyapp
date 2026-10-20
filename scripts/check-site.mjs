@@ -36,12 +36,12 @@ for (const match of html.matchAll(/\b(?:href|src)="([^"]+)"/g)) {
   if (value.startsWith('#')) assert(ids.includes(value.slice(1)), `Broken local anchor: ${value}`);
   assert(!/\.apk(?:[?#]|$)/i.test(value), 'No published stable APK exists: link the development workflow, not a guessed APK');
   if (/releases\/download\//.test(value)) {
-    assert.match(value, /^https:\/\/github\.com\/igalgerman\/copyapp\/releases\/download\/v1\.0\.2\/(copyapp\.exe|install\.mp4|use\.mp4|demo-copyapp-[a-z-]+\.mp4)$/, `Unverified release asset: ${value}`);
+    assert.match(value, /^https:\/\/github\.com\/igalgerman\/copyapp\/releases\/download\/(?:v1\.0\.2\/(?:copyapp\.exe|install\.mp4|use\.mp4|demo-copyapp-[a-z-]+\.mp4)|v1\.0\.3\/demo-copyapp-[a-z-]+\.mp4)$/, `Unverified release asset: ${value}`);
   }
 }
 const expectedLinks = [
-  /actions\/(?:workflows\/android\.yml|runs\/\d+)" data-i18n="companionAction"/,
-  /actions\/(?:workflows\/validate\.yml|runs\/\d+)" data-i18n="companionWindowsAction"/,
+  /releases\/tag\/v1\.0\.3" data-i18n="companionAction"/,
+  /releases\/download\/v1\.0\.3\/demo-copyapp-android-apk-install-and-tile\.mp4" data-i18n="companionWindowsAction"/,
   /blob\/master\/docs\/ANDROID\.md" data-i18n="companionGuide"/,
 ];
 for (const pattern of expectedLinks) assert.match(html, pattern, 'Missing companion preview action');

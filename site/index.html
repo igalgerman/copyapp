@@ -207,14 +207,14 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
           <h3 id="companion-title" data-i18n="companionTitle">אריח Android לשליחת טקסט</h3>
           <p data-i18n="companionBody">מעתיקים טקסט או קישור באפליקציה אחרת, פותחים את ההגדרות המהירות ומקישים על <bdi dir="ltr">CopyApp: Send to PC</bdi>. חלון קצר קורא את הלוח ושולח אותו למחשב.</p>
           <ol class="option-steps">
-            <li data-i18n="companionStep1">דורש גם את גרסת Windows החדשה שבבדיקה; הורדת 1.0.2 שמוצעת כאן אינה כוללת צימוד ל‑APK.</li>
+            <li data-i18n="companionStep1">מורידים את copyapp.exe ואת CopyApp-Android.apk מאותה גרסה, 1.0.3. הורדת 1.0.2 שמוצעת למעלה אינה כוללת צימוד ל‑APK.</li>
             <li data-i18n="companionStep2">מצמדים פעם אחת בסריקת QR ומשווים את טביעת האצבע המלאה. לאחר מכן מוסיפים את האריח להגדרות המהירות.</li>
             <li data-i18n="companionStep3">טקסט וקישורים בלבד, מהטלפון למחשב. לתמונות, קבצים והכיוון ההפוך משתמשים בדפדפן. אין מעקב אוטומטי אחרי הלוח.</li>
           </ol>
-          <p class="option-note" data-i18n="companionNote">גרסת ניסוי בלבד: טרם נבדקה במכשיר Samsung פיזי, ואין עדיין APK יציב להורדה. קובץ הבדיקה ב‑GitHub עשוי לדרוש כניסה לחשבון וחילוץ ZIP. עדכון עשוי לדרוש התקנה מחדש וצימוד חוזר.</p>
+          <p class="option-note" data-i18n="companionNote">ה‑APK חתום, אך עדיין לא נבדק בטלפון פיזי. אנדרואיד יבקש לאשר התקנה ממקור לא מוכר. הסרטון הוא הדגמה מאוירת.</p>
           <div class="option-actions">
-            <a class="text-link" href="https://github.com/igalgerman/copyapp/actions/workflows/android.yml" data-i18n="companionAction">בדיקות Android וקובץ APK לניסוי</a>
-            <a class="text-link" href="https://github.com/igalgerman/copyapp/actions/workflows/validate.yml" data-i18n="companionWindowsAction">בדיקות Windows וקובצי ניסוי</a>
+            <a class="text-link" href="https://github.com/igalgerman/copyapp/releases/tag/v1.0.3" data-i18n="companionAction">הורדת APK ו‑Windows 1.0.3</a>
+            <a class="text-link" href="https://github.com/igalgerman/copyapp/releases/download/v1.0.3/demo-copyapp-android-apk-install-and-tile.mp4" data-i18n="companionWindowsAction">סרטון: התקנת ה‑APK והאריח</a>
             <a class="text-link" href="https://github.com/igalgerman/copyapp/blob/master/docs/ANDROID.md" data-i18n="companionGuide">הוראות ותאימות לגרסת Windows</a>
           </div>
         </article>
@@ -361,6 +361,10 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
           <video controls playsinline preload="none" aria-labelledby="cl7-t"><source src="https://github.com/igalgerman/copyapp/releases/download/v1.0.2/demo-copyapp-pc-receive-settings.mp4" type="video/mp4"></video>
           <figcaption id="cl7-t" data-i18n="cl7">במחשב: לאן מגיע מה שנשלח מהטלפון</figcaption>
         </figure>
+        <figure class="clip">
+          <video controls playsinline preload="none" aria-labelledby="cl8-t"><source src="https://github.com/igalgerman/copyapp/releases/download/v1.0.3/demo-copyapp-android-apk-install-and-tile.mp4" type="video/mp4"></video>
+          <figcaption id="cl8-t" data-i18n="cl8">אנדרואיד: התקנת ה‑APK והוספת האריח (גרסה 1.0.3)</figcaption>
+        </figure>
       </div>
     </div>
   </section>
@@ -376,7 +380,7 @@ if(/^https?:/.test(location.protocol)){var p=document.createElement('link');p.re
         <li data-i18n="is5">דפדפן אינו יכול לקרוא את הלוח ברקע. בטלפון משתמשים בכפתור ״שליחת הלוח״; אם ההעתקה האוטומטית נחסמה, מקישים ״העתקה״ בכרטיס.</li>
         <li data-i18n="is6">אם קיצור Ctrl+Alt+C תפוס באפליקציה אחרת, CopyApp משתמשת ב‑Ctrl+Alt+Shift+C ומציגה בחלון את הקיצור הפעיל. ״נשלח״ פירושו שהפריט פורסם לטלפון, לא שהועתק שם.</li>
         <li data-i18n="is7">אין תמיכה באייפון.</li>
-        <li data-i18n="is8">ה‑APK עם אריח ההגדרות המהירות הוא תצוגת פיתוח: לא נבדק עדיין בטלפון אמיתי, ואינו מתחבר לקובץ Windows 1.0.2 שבהורדה.</li>
+        <li data-i18n="is8">ה‑APK עם אריח ההגדרות המהירות (1.0.3) חתום אך עדיין לא נבדק בטלפון אמיתי, ומתחבר רק לקובץ Windows 1.0.3 ומעלה, לא ל‑1.0.2.</li>
         <li data-i18n="is9">הסרטונים כאן הם הקלטות הדגמה באנגלית עם מסכי Windows ו‑Android מאויירים (מסומנים בסרטון), לא צילום מכשירים אמיתיים.</li>
       </ul>
     </div>
