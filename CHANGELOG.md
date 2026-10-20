@@ -4,6 +4,13 @@ All notable changes to CopyApp. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+## [1.0.3] - 2026-10-20
+
+- Fixed: the pairing QR code embedded the whole certificate and could not be scanned. It now carries only the certificate fingerprint; the Android app downloads and pins the public CA.
+- First signed release of the optional Android companion (Quick Settings tile **CopyApp: Send to PC**). It is new and has not yet been tested on physical phones. The browser/PWA flow is unchanged.
+- Adds the Sentry diagnostics build, the 20-press hotkey end-to-end check, short demo videos and a known-issues list on the website.
+
+
 - Added an optional native Android text/URL clipboard tile alongside the existing browser/PWA. Separate persisted credentials keep both paired; Windows Unpair revokes both.
 - Native onboarding verifies the PC certificate fingerprint and pins its CA while retaining hostname validation. Clipboard reads wait for a focused Activity; overlapping sends and silent resend after recreation are prevented.
 - Windows drains both hotkey event streams, retries unavailable registration and closed listeners, preserves clipboard access errors and retries transient failures. Actual shortcut and last-attempt status are visible; queued/published status does not claim Android receipt.
