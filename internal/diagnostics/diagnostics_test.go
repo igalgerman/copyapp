@@ -63,6 +63,7 @@ func TestSanitizeEventUsesCurrentSDKPrivacyFields(t *testing.T) {
 		Threads:     []sentry.Thread{{Name: "SECRET"}},
 		Exception:   []sentry.Exception{{Value: "SECRET"}},
 		ServerName:  "SECRET",
+		Tags:        map[string]string{"clipboard": "SECRET", "support_id": strings.Repeat("a", 32)},
 	}
 	got := sanitizeEvent(e, nil)
 	b, err := json.Marshal(got)
@@ -71,6 +72,9 @@ func TestSanitizeEventUsesCurrentSDKPrivacyFields(t *testing.T) {
 	}
 	if strings.Contains(string(b), "SECRET") {
 		t.Fatal("event retained sensitive metadata")
+	}
+	if got.Tags["support_id"] != strings.Repeat("a", 32) {
+		t.Fatal("event lost support correlation")
 	}
 	if len(got.Attachments) != 0 {
 		t.Fatal("event retained binary attachments")

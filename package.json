@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "build:diagnostics": "node scripts/build-diagnostics.mjs",
-    "test:diagnostics": "node internal/server/testdata/diagnostics_test.mjs"
+    "test:diagnostics": "node internal/server/testdata/diagnostics_test.mjs",
+    "test:site": "node scripts/check-site.mjs"
   },
   "devDependencies": {
     "@sentry/browser": "11.8.0",

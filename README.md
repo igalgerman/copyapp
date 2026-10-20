@@ -4,7 +4,7 @@
 
 CopyApp lets you copy and paste between your Windows PC and your Android phone.
 
-Development work for issues #1–#4 is documented in [diagnostics](docs/DIAGNOSTICS.md), [Android companion](docs/ANDROID.md), [Windows hotkey verification](docs/HOTKEY-QA.md), and the [Hebrew real-device tutorial recording kit](docs/video/REAL-CAPTURE.he.md). These changes require build and physical-device validation; the downloads below remain the previously published releases. Four new tutorial recordings are not yet available.
+Development work for issues #1–#4 is documented in [diagnostics](docs/DIAGNOSTICS.md), [Android companion](docs/ANDROID.md), [Windows hotkey verification](docs/HOTKEY-QA.md), and the [Hebrew real-device tutorial recording kit](docs/video/REAL-CAPTURE.he.md). Windows/Android builds pass CI; owner setup and physical-device validation remain required. The downloads below remain the previously published releases. Four new tutorial recordings are not yet available. The [updated website mirror](https://igalgerman.github.io/copyapp/) explains the browser/PWA and optional APK paths.
 
 - Copy and paste **text**, **images**, and **files** between your PC and your phone.
 - Transfers work over **your own Wi-Fi**; clipboard contents and files stay on your local network. Builds configured for Sentry send content-free diagnostic events to that service.

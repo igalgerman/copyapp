@@ -8,17 +8,25 @@ live ingestion verified by this change.
 
 1. Create a hosted Sentry project. Copy its **public DSN**, not an auth/admin token.
    Use an HTTPS hosted ingestion DSN (`o….ingest[.us|.de].sentry.io`).
-2. In this repository's Actions **Variables**, set `COPYAPP_SENTRY_DSN` to that
-   DSN. The release build embeds it in the executable. For a manual build use
+2. Open [repository Actions variables](https://github.com/igalgerman/copyapp/settings/variables/actions)
+   (**Settings → Secrets and variables → Actions → Variables → New repository variable**).
+   Set `COPYAPP_SENTRY_DSN` to the public DSN. The next release build embeds it in
+   the executable; setting the variable alone does not modify installed apps. For a manual build use
    `./build.ps1 -Version 1.0.2 -SentryDSN 'https://PUBLICKEY@o123.ingest.sentry.io/456'`.
    Replace the example with the actual DSN; its public key is hexadecimal.
-   A process-level `COPYAPP_SENTRY_DSN` overrides the embedded value.
-3. Install the rebuilt Windows app. Open the control window and find **Support
+   A nonempty process-level `COPYAPP_SENTRY_DSN` overrides the embedded value.
+   For a local smoke test, quit the existing tray app, set that environment
+   variable in PowerShell, and start `CopyApp.exe` from the same window.
+3. Publish a **new release version** and install its rebuilt Windows app. Existing
+   release assets are deliberately preserved: rerunning an old tag does not
+   replace its executable. Open the control window and find **Support
    ID**. Pair a phone; its authenticated `/status` response supplies that same PC
    support ID to the phone's direct diagnostic sender. Search Sentry Logs for
    `support_id` plus a time window; use `session_id`, `operation_id`, `action`,
    `stage` and `result` to narrow the timeline. Share/export only the selected
-   diagnostic events with the debugging agent.
+   diagnostic events with the debugging agent. A healthy activation shows a
+   Windows `app.launch.ok` log and, after opening the PWA, an Android
+   `app.launch.ok` log. No received events means activation is still unverified.
 
 No Sentry administrator credentials belong in the app. A DSN is public ingestion
 configuration. Windows and the phone each contact Sentry directly over HTTPS;
@@ -33,17 +41,19 @@ pre-pairing page errors once the phone has loaded the app successfully.
 Install Go matching `go.mod` and Node 22.12+ on the build machine. Run:
 
 ```
-npm install --ignore-scripts
+npm ci --ignore-scripts
 npm run build:diagnostics
 npm run test:diagnostics
-go mod tidy
-go test ./...
+go mod download
+go test -mod=readonly ./...
 ```
 
 `build.ps1`, release CI and validation CI build the browser SDK before embedding
 `internal/server/web`. `scripts/diagnostics-entry.mjs` bundles the official
 `@sentry/browser` 11.8.0 with esbuild; no CDN script is loaded at runtime.
-The generated SDK bundle is excluded from Git. Direct `go build` requires the
+The npm and Go dependency manifests are checked in. `npm ci` uses the npm lock,
+and Go tests/builds use `-mod=readonly`; dependency updates are deliberate source
+changes. The generated SDK bundle is excluded from Git. Direct `go build` requires the
 bundle step first for browser diagnostics. Go uses official `sentry-go` v0.50.0.
 Its source API was checked at that tag: logs are enabled automatically (the older
 `EnableLogs` option no longer exists). Source maps and tracing are not enabled.
@@ -102,5 +112,6 @@ fixed. Before enabling releases, check the current Developer plan and your
 project's Logs/error ingestion, retention, overage and rate-limit settings at
 <https://sentry.io/pricing/> and in Usage Stats. Current live free-plan quotas
 could not be verified here; the application cap is a ceiling, not an account
-quota guarantee. Reduce event volume or disable the DSN if the account budget
-requires it.
+quota guarantee. Reduce event volume or clear the repository DSN variable and build a new release
+if the account budget requires it. An empty runtime variable does not override a
+DSN already embedded in an installed executable.

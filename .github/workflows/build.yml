@@ -26,7 +26,7 @@ jobs:
           node-version: '22'
       - name: Build bundled browser diagnostics
         run: |
-          npm install --ignore-scripts
+          npm ci --ignore-scripts
           npm run build:diagnostics
           npm run test:diagnostics
 
@@ -41,11 +41,11 @@ jobs:
       - name: Vet and test
         shell: pwsh
         run: |
-          go mod tidy
+          go mod download
           if ($LASTEXITCODE) { exit 1 }
-          go vet ./...
+          go vet -mod=readonly ./...
           if ($LASTEXITCODE) { exit 1 }
-          go test -count=1 ./...
+          go test -mod=readonly -count=1 ./...
           if ($LASTEXITCODE) { exit 1 }
 
       - name: Build

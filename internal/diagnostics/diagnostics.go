@@ -110,7 +110,12 @@ func Start(dir, version string, logf func(string, ...any)) (*Reporter, error) {
 		r.dsn = ""
 		return r, errors.New("Sentry initialization failed")
 	}
-	r.hub = sentry.NewHub(client, sentry.NewScope())
+	scope := sentry.NewScope()
+	scope.SetTags(map[string]string{
+		"app": "copyapp", "side": "windows", "version": version,
+		"installation_id": r.id, "support_id": r.id, "session_id": r.session,
+	})
+	r.hub = sentry.NewHub(client, scope)
 	r.logger = sentry.NewLogger(sentry.SetHubOnContext(context.Background(), r.hub))
 	Emit("app", "launch", "ok", "")
 	return r, startupErr
@@ -128,6 +133,15 @@ func sanitizeEvent(e *sentry.Event, _ *sentry.EventHint) *sentry.Event {
 	e.Threads = nil
 	e.DebugMeta = nil
 	e.ServerName = "copyapp"
+	// Keep only diagnostic identity tags; arbitrary application tags are not
+	// needed for the crash marker and might contain clipboard-derived values.
+	tags := make(map[string]string)
+	for _, key := range []string{"app", "side", "version", "installation_id", "support_id", "session_id", "operation_id", "action", "stage", "result"} {
+		if value := e.Tags[key]; codeRE.MatchString(value) {
+			tags[key] = value
+		}
+	}
+	e.Tags = tags
 	for i := range e.Exception {
 		e.Exception[i].Value = "redacted"
 	}

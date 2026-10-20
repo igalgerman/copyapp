@@ -2,6 +2,17 @@
 
 All notable changes to CopyApp. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- Added an optional native Android text/URL clipboard tile alongside the existing browser/PWA. Separate persisted credentials keep both paired; Windows Unpair revokes both.
+- Native onboarding verifies the PC certificate fingerprint and pins its CA while retaining hostname validation. Clipboard reads wait for a focused Activity; overlapping sends and silent resend after recreation are prevented.
+- Windows drains both hotkey event streams, retries unavailable registration and closed listeners, preserves clipboard access errors and retries transient failures. Actual shortcut and last-attempt status are visible; queued/published status does not claim Android receipt.
+- Added optional, content-free hosted Sentry diagnostics with Support ID correlation, bounded queues/rates and local log fallback. Releases remain usable without a DSN.
+- Added reproducible dependency locks, Windows/Android CI downloads and owner-key signed Android release automation. Stable APK publication requires owner signing setup and physical-device validation.
+- Website distinguishes the supported browser/PWA flow from the Android development preview in Hebrew, English and Russian. Existing videos are labeled as v1.0.2 walkthroughs with illustrated OS scenes; four new real-device Hebrew recordings remain outstanding.
+
+Physical Windows/Samsung acceptance, live Sentry provisioning and final tutorial recordings have not been completed by automated CI.
+
 ## [1.0.2] - 2026-10-16
 
 - Automated tests and recordings use a separate loopback-only build, including installed/upgraded copies, to avoid repeated Windows Firewall prompts from temporary executable paths. Harnesses refuse production EXEs before launch and verify local-only listeners. Normal releases retain LAN access.
