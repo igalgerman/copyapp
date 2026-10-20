@@ -209,7 +209,7 @@ func (s *Server) StartPairing() string {
 }
 
 func (s *Server) pairURL(tok string) string {
-	return strings.TrimRight(s.cfg.BaseURL(), "/") + "/pair?t=" + tok + "#ca=" + base64.RawURLEncoding.EncodeToString(s.cfg.CAPEM)
+	return strings.TrimRight(s.cfg.BaseURL(), "/") + "/pair?t=" + tok + "#fp=" + strings.ReplaceAll(strings.ToLower(fingerprint(s.cfg.CAPEM)), ":", "")
 }
 
 // Publish adds an item to the outbox and pushes it to connected phones.

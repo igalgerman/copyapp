@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -19,9 +18,8 @@ func TestCompanionPairAndScopedSend(t *testing.T) {
 		t.Fatal(err)
 	}
 	fragment, _ := url.ParseQuery(u.Fragment)
-	ca, err := base64.RawURLEncoding.DecodeString(fragment.Get("ca"))
-	if err != nil || string(ca) != string(e.s.cfg.CAPEM) {
-		t.Fatal("QR missing pinned certificate")
+	if want := strings.ReplaceAll(strings.ToLower(fingerprint(e.s.cfg.CAPEM)), ":", ""); fragment.Get("fp") != want || len(qr) > 200 {
+		t.Fatalf("QR must carry only the short CA fingerprint: %q (%d bytes)", fragment.Get("fp"), len(qr))
 	}
 	request := httptest.NewRequest("POST", "https://192.168.1.5:8443/companion/pair", strings.NewReader(`{"token":"`+u.Query().Get("t")+`"}`))
 	request.RemoteAddr = lanAddr

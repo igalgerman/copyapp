@@ -128,8 +128,10 @@ Do not present this placeholder or a development artifact as a tested release.
    another app, tap the tile, then press Ctrl+V in a Windows text editor. The main
    app also has **Send clipboard to PC**, using the same focused Activity.
 
-The QR carries the PC's public CA certificate in its URL fragment. The app trusts
-only that CA after explicit fingerprint confirmation, uses the platform X.509
+The QR carries only the SHA-256 fingerprint of the PC's public CA certificate (a
+full certificate made the QR too dense to scan). The app downloads that public CA
+from the PC without sending any secret, accepts it only if its fingerprint equals
+the QR and the one you confirm, and then trusts only that CA, uses the platform X.509
 trust manager and retains hostname verification. It never accepts arbitrary TLS
 certificates. A QR from an older Windows version will ask you to update CopyApp.
 The credential is returned only over the verified HTTPS connection and stored in

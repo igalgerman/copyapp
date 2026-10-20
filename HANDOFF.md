@@ -39,27 +39,22 @@ Do not reset/clean this directory or mistake its status for an unmerged PR. Pref
 - Stable Android release-signing/publishing workflow is implemented. PR builds use no owner secrets. CI tests signing with an ephemeral key and deletes that key and test release APK; only debug APK is a development artifact.
 - Updated trilingual website, verified dependency locks and build checks, real-device Hebrew tutorial recording/assembly kit.
 
-## Sentry — current blocker and next steps
+## Sentry — status (updated 2026-10-20)
 
-**No Sentry project/DSN has been connected, no live ingestion has been verified, and diagnostics remain disabled without configuration.** The user originally said there was no Sentry project, then created/accessed an account and shared the agent-onboarding screen.
+**Done:**
 
-The screenshot shows organization **`igorgerman`** (different spelling from GitHub `igalgerman`), at `igorgerman.sentry.io`, offering the official command pattern:
+- Sentry plugin MCP authenticated via OAuth (the npx installer / run code is no longer needed; do not use it).
+- Created Sentry project **`copyapp`** (platform `go`) in org **`igorgerman`** (team `igorgerman`, project ID 4512288841793536). One project serves both Windows (Go) and the PWA, since the app embeds a single DSN and serves it to the browser.
+- Public DSN: `https://bfa01406d23cd54e76c4a0305e4e4755@o4512288490520576.ingest.us.sentry.io/4512288841793536` (public ingestion key, safe to store; passes `build.ps1` validation).
+- Set GitHub Actions repository variable `COPYAPP_SENTRY_DSN` on `igalgerman/copyapp` via authenticated `gh` (verified with `gh variable list`).
+- Ran a temporary Go test (deleted afterwards, nothing committed) that called `diagnostics.Start` + `Emit` with the DSN. It passed and flushed; Support ID in that run was `522952e8949aeaff6fc04a808d1d10b5`.
 
-```sh
-npx @sentry/agent-plugin install '<org-slug>#<fresh-run-code>'
-```
+**NOT yet verified / remaining:**
 
-Do NOT reuse an old onboarding run code. No codes/tokens are included here. The screenshot's code may have expired; obtain a fresh one only if the supported flow needs it. The installer was never successfully downloaded. No plugin installation or Sentry account connection was established by this agent.
-
-Suggested sequence for the next agent:
-
-1. Establish that the execution environment actually has working network access; inspect the current environment/runtime instructions and preserve its proxy/CA configuration. Use a short bounded check first.
-2. Check available Sentry tools/plugin capabilities again. Previous tool discovery found no Sentry tools, and plugin search returned no Sentry plugin. The official npm installer is the path the user explicitly asked us to use.
-3. Run the official installer/help in a working environment with the required runtime permissions; keep output polling short and report progress. Installing a plugin does not automatically mean its tools are loaded into the current agent session.
-4. Through the authenticated supported flow, create/select the CopyApp Sentry project and obtain its public DSN. Never ask the user to paste an admin token into chat or commit credentials.
-5. Set GitHub Actions **repository variable** `COPYAPP_SENTRY_DSN` to the public DSN. Native GitHub connector tools available in this session could not manage repository variables/secrets. `gh` exists locally, but its authentication has NOT been established/verified. Use supported authenticated tooling; do not assume the GitHub connector token is a shell credential.
-6. Build a new Windows executable with the DSN and install/run that build. Updating the website or repository variable alone does not update an existing installed EXE.
-7. Verify real events in Sentry Logs by `support_id`, including a deliberate safe failure and offline behavior. Do not call the setup complete before receiving events.
+1. ~~Live ingestion~~ **Confirmed** (2026-10-20): `app.launch.ok` and `setup.verify.ok` from the test run appeared in Sentry Logs for project `copyapp` after a short ingestion delay.
+2. A `build.yml` workflow_dispatch run on `master` was started 2026-10-20 (run 39433477886); download its `copyapp-0.0.0` artifact, close the old CopyApp and run the new EXE; the old installed/published v1.0.2 EXE predates the integration and will not report.
+3. Verify real Windows + phone events by `support_id`, a deliberate safe failure, and offline behavior (see `docs/DIAGNOSTICS.md`, three-step verification).
+4. Optional: add a Sentry alert once events flow.
 
 Activation details:
 

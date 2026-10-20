@@ -16,7 +16,7 @@ class Connection(private val context: Context) {
     private val prefs = context.getSharedPreferences("pairing", Context.MODE_PRIVATE)
     fun paired() = prefs.contains("credential")
     fun clear() { prefs.edit().clear().commit() }
-    data class Pairing(val origin: String, val token: String, val ca: ByteArray, val fingerprint: String)
+    data class Pairing(val origin: String, val token: String, val fingerprint: String)
     fun parse(raw: String): Pairing {
         val uri = android.net.Uri.parse(raw)
         require(uri.scheme == "https" && uri.path == "/pair" && uri.userInfo == null) { "Scan the current PC pairing QR code" }
@@ -25,13 +25,36 @@ class Connection(private val context: Context) {
         val token = uri.getQueryParameter("t") ?: error("Missing pairing token")
         require(token.matches(Regex("[0-9a-f]{64}"))) { "Invalid token" }
         val fragment = android.net.Uri.parse("https://local/?" + (uri.fragment ?: ""))
-        val ca = Base64.decode(fragment.getQueryParameter("ca") ?: error("Update CopyApp on Windows; this QR does not support the companion"), Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
-        require(ca.size <= 4096) { "Invalid certificate" }
-        val cert = certificate(ca)
-        require(cert.basicConstraints >= 0) { "Expected PC CA certificate" }
-        cert.checkValidity()
-        val fp = MessageDigest.getInstance("SHA-256").digest(cert.encoded).joinToString(":") { "%02X".format(it.toInt() and 255) }
-        return Pairing("https://" + (if (host.contains(':')) "[$host]" else host) + (if (uri.port > 0) ":${uri.port}" else ""), token, ca, fp)
+        val hex = fragment.getQueryParameter("fp") ?: error("Update CopyApp on Windows; this QR does not support the companion")
+        require(hex.matches(Regex("[0-9a-f]{64}"))) { "Invalid certificate fingerprint" }
+        val fp = hex.uppercase().chunked(2).joinToString(":")
+        return Pairing("https://" + (if (host.contains(':')) "[$host]" else host) + (if (uri.port > 0) ":${uri.port}" else ""), token, fp)
+    }
+    // The CA is public data: fetch it without trusting the TLS peer, then accept it only if its SHA-256 matches the QR fingerprint.
+    // No credential or pairing token is sent on this request.
+    private fun fetchCa(pairing: Pairing): ByteArray {
+        val trustAll = arrayOf<javax.net.ssl.TrustManager>(object : javax.net.ssl.X509TrustManager {
+            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
+            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
+            override fun getAcceptedIssuers() = arrayOf<X509Certificate>()
+        })
+        val tls = SSLContext.getInstance("TLS").apply { init(null, trustAll, null) }
+        val conn = URL(pairing.origin + "/ca.crt").openConnection() as HttpsURLConnection
+        try {
+            conn.sslSocketFactory = tls.socketFactory
+            conn.hostnameVerifier = javax.net.ssl.HostnameVerifier { _, _ -> true }
+            conn.instanceFollowRedirects = false
+            conn.connectTimeout = 5000; conn.readTimeout = 5000
+            check(conn.responseCode == 200) { "PC pairing window is closed. Scan a fresh QR code." }
+            val ca = conn.inputStream.use { it.readBytes() }
+            require(ca.size <= 4096) { "Invalid certificate" }
+            val cert = certificate(ca)
+            require(cert.basicConstraints >= 0) { "Expected PC CA certificate" }
+            cert.checkValidity()
+            val actual = MessageDigest.getInstance("SHA-256").digest(cert.encoded).joinToString(":") { "%02X".format(it.toInt() and 255) }
+            check(actual == pairing.fingerprint) { "Certificate does not match the QR code" }
+            return ca
+        } finally { conn.disconnect() }
     }
     private fun certificate(ca: ByteArray) = CertificateFactory.getInstance("X.509").generateCertificate(ca.inputStream()) as X509Certificate
     private fun post(origin: String, ca: ByteArray, path: String, payload: JSONObject, credential: String? = null): JSONObject {
@@ -56,10 +79,11 @@ class Connection(private val context: Context) {
         } finally { conn.disconnect() }
     }
     fun pair(pairing: Pairing) {
-        val response = post(pairing.origin, pairing.ca, "/companion/pair", JSONObject().put("token", pairing.token))
+        val ca = fetchCa(pairing)
+        val response = post(pairing.origin, ca, "/companion/pair", JSONObject().put("token", pairing.token))
         val credential = response.getString("credential")
         check(credential.matches(Regex("[0-9a-f]{64}"))) { "Invalid PC response" }
-        check(prefs.edit().putString("origin", pairing.origin).putString("ca", Base64.encodeToString(pairing.ca, Base64.NO_WRAP)).putString("credential", credential).commit()) { "Cannot save pairing" }
+        check(prefs.edit().putString("origin", pairing.origin).putString("ca", Base64.encodeToString(ca, Base64.NO_WRAP)).putString("credential", credential).commit()) { "Cannot save pairing" }
     }
     fun send(text: String) {
         check(paired()) { "Open CopyApp and pair with your PC first" }

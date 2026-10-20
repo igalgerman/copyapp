@@ -107,7 +107,7 @@ try {
     Invoke-WebRequest "$L/qr" -Headers $lh -OutFile "$tmp\qr.png" | Out-Null
     $env:NODE_PATH = "$node\node_modules"
     $pairUrl = node "$PSScriptRoot\qr-decode.js" "$tmp\qr.png"
-    Check 'QR decodes to a pair URL' ($pairUrl -match '^https://.+/pair\?t=[0-9a-f]{64}$') $pairUrl
+    Check 'QR decodes to a pair URL' ($pairUrl -match '^https://.+/pair\?t=[0-9a-f]{64}#fp=[0-9a-f]{64}$') $pairUrl
     $pairUrl = $pairUrl -replace '^https://[^/]+', $B
     $r = Invoke-WebRequest $pairUrl -SessionVariable sess @opt
     $cookie = $sess.Cookies.GetAllCookies() | Where-Object Name -eq 'copyapp_session'
@@ -210,11 +210,23 @@ try {
     $hotEvents = curl.exe -sk --max-time 3 -H "Cookie: $($hdr.Cookie)" "$B/events"
     Check 'global hotkey puts real clipboard text in phone inbox' ("$hotEvents" -match 'hotkey-real-exe-e2e')
     $log = Get-Content "$dd\copyapp.log" -Raw
-    Check 'log: hotkey press, send request and publish recorded' ($log -match 'hotkey pressed: Ctrl\+Alt' -and $log -match 'clipboard send requested \(hotkey\)' -and $log -match 'published to phone: kind=text')
+    Check 'log: hotkey press, send request and publish recorded' ($log -match 'hotkey received: Ctrl\+Alt' -and $log -match 'source=hotkey requested' -and $log -match 'publish=(queued|published) kind=text')
+    # Issue #3: 20 separate presses must each send exactly once (no misses, no duplicates).
+    $press = @(0x11, 0x12); if ($pcState.hotkey -match 'Shift') { $press += 0x10 }; $press += 0x43
+    1..20 | ForEach-Object {
+        Set-Clipboard "hk20-$_-e2e"
+        foreach ($key in $press) { [CopyAppE2E.Keys]::keybd_event($key, 0, 0, [UIntPtr]::Zero) }
+        Start-Sleep -Milliseconds 60
+        foreach ($key in $press[($press.Count - 1)..0]) { [CopyAppE2E.Keys]::keybd_event($key, 0, 2, [UIntPtr]::Zero) }
+        Start-Sleep -Milliseconds 700
+    }
+    $hot20 = "$(curl.exe -sk --max-time 3 -H "Cookie: $($hdr.Cookie)" "$B/events")"
+    $bad = @(1..20 | Where-Object { ([regex]::Matches($hot20, "hk20-$_-e2e")).Count -ne 1 })
+    Check 'hotkey: 20 separate presses each sent exactly once' ($bad.Count -eq 0) "bad: $($bad -join ',')"
     # The same send from the CopyApp window button (same path as the tray item).
     Set-Clipboard 'window-button-e2e'
     $r = Invoke-RestMethod "$L/local/send-clipboard" -Method POST -Headers $lh
-    Check 'window "send clipboard now" -> sent' ($r.result -eq 'sent') "$($r.result)"
+    Check 'window "send clipboard now" -> queued/published' ($r.result -in 'queued','published') "$($r.result)"
     $ev2 = curl.exe -sk --max-time 3 -H "Cookie: $($hdr.Cookie)" "$B/events"
     Check 'window button puts clipboard text in phone inbox' ("$ev2" -match 'window-button-e2e')
     powershell.exe -NoProfile -STA -Command 'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Clipboard]::Clear()'
