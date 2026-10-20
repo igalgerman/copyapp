@@ -36,6 +36,11 @@ jobs:
       - name: Build Windows application
         shell: pwsh
         run: ./build.ps1 -Version 0.0.0
+      - name: Check dependency manifests and Go formatting
+        shell: pwsh
+        run: |
+          git add --intent-to-add package-lock.json
+          git diff --exit-code -- go.mod go.sum package-lock.json ':(glob)cmd/**/*.go' ':(glob)internal/**/*.go'
       - name: Retain resolved manifests and Go formatting for review
         if: always()
         uses: actions/upload-artifact@v4
